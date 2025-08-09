@@ -1,4 +1,4 @@
-l<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -7,107 +7,167 @@ l<!DOCTYPE html>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        .glass-effect { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); }
+        .gradient-bg {
+            background: linear-gradient(-45deg, #667eea, #764ba2, #f093fb, #f5576c);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+        }
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .wave-animation {
+            background: linear-gradient(270deg, transparent, rgba(255,255,255,0.2), transparent);
+            animation: wave 2s infinite;
+        }
+        @keyframes wave {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
     </style>
 </head>
 <body class="gradient-bg min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-md">
+    <div class="w-full max-w-md mx-auto">
         <!-- 主卡片 -->
-        <div class="bg-white rounded-3xl shadow-2xl p-8 transform transition-all">
-            <!-- 标题 -->
+        <div class="glass-card rounded-3xl shadow-2xl p-8 transform transition-all duration-500">
+            <!-- 标题区域 -->
             <div class="text-center mb-8">
-                <div class="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-music text-white text-2xl"></i>
+                <div class="relative inline-block">
+                    <div class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
+                        <i class="fas fa-waveform-lines text-3xl text-white"></i>
+                    </div>
+                    <div class="absolute -top-2 -right-2 w-6 h-6 bg-green-400 rounded-full animate-pulse"></div>
                 </div>
-                <h1 class="text-3xl font-bold text-gray-800">音质降低器</h1>
-                <p class="text-gray-600 mt-2">专业级音频压缩与失真处理</p>
+                <h1 class="text-3xl font-bold text-white mb-2">音质降低器</h1>
+                <p class="text-white/80 text-sm">一键压缩 • 智能失真 • 多格式支持</p>
             </div>
 
             <!-- 上传区域 -->
-            <div id="uploadArea" class="border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center cursor-pointer hover:border-blue-500 transition-all">
+            <div id="uploadArea" class="border-2 border-dashed border-white/30 rounded-2xl p-8 text-center cursor-pointer 
+                                        hover:border-white/50 hover:bg-white/5 transition-all duration-300 group">
                 <input type="file" id="audioInput" accept="audio/*" class="hidden">
-                <i class="fas fa-cloud-upload-alt text-5xl text-gray-400 mb-4"></i>
-                <p class="text-gray-600 font-medium">点击或拖拽音频文件到此处</p>
-                <p class="text-sm text-gray-500 mt-2">支持 MP3, WAV, M4A, OGG</p>
+                <div class="group-hover:scale-110 transition-transform duration-300">
+                    <i class="fas fa-cloud-upload-alt text-5xl text-white/60 mb-4"></i>
+                    <p class="text-white/90 font-semibold mb-2">拖拽或点击上传音频</p>
+                    <p class="text-white/60 text-xs">MP3 • WAV • M4A • OGG • FLAC</p>
+                </div>
             </div>
 
-            <!-- 音频信息 -->
+            <!-- 音频信息卡片 -->
             <div id="audioInfo" class="hidden mt-6">
-                <div class="bg-gray-50 rounded-xl p-4">
+                <div class="bg-white/10 rounded-xl p-4 backdrop-blur-sm">
                     <div class="flex items-center mb-3">
-                        <i class="fas fa-file-audio text-blue-500 mr-2"></i>
-                        <span id="fileName" class="font-medium text-gray-800 truncate"></span>
+                        <i class="fas fa-file-audio text-blue-300 mr-3"></i>
+                        <span id="fileName" class="text-white font-medium truncate"></span>
                     </div>
                     <div class="grid grid-cols-2 gap-4 text-sm">
-                        <div><span class="text-gray-600">时长:</span> <span id="duration" class="font-medium"></span></div>
-                        <div><span class="text-gray-600">大小:</span> <span id="fileSize" class="font-medium"></span></div>
+                        <div class="text-white/70">
+                            <i class="fas fa-clock mr-1"></i>
+                            <span id="duration" class="text-white/90"></span>
+                        </div>
+                        <div class="text-white/70">
+                            <i class="fas fa-database mr-1"></i>
+                            <span id="fileSize" class="text-white/90"></span>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- 控制按钮 -->
             <div id="controls" class="hidden mt-6 space-y-3">
-                <button id="settingsBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-xl transition-all transform hover:scale-105">
-                    <i class="fas fa-cog mr-2"></i>设置选项
+                <button id="settingsBtn" class="w-full bg-white/20 hover:bg-white/30 text-white font-semibold py-3 px-6 
+                                               rounded-xl transition-all duration-300 backdrop-blur-sm border border-white/20
+                                               hover:scale-105 transform">
+                    <i class="fas fa-cog mr-2"></i>高级设置
                 </button>
-                <button id="compressBtn" class="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-3 px-6 rounded-xl transition-all transform hover:scale-105">
-                    <i class="fas fa-compress-arrows-alt mr-2"></i>一键降低音质
+                <button id="compressBtn" class="w-full bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 
+                                               text-white font-bold py-3 px-6 rounded-xl transition-all duration-300 
+                                               shadow-lg hover:shadow-xl transform hover:scale-105">
+                    <i class="fas fa-magic mr-2"></i>开始处理
                 </button>
             </div>
 
             <!-- 进度条 -->
             <div id="progressContainer" class="hidden mt-6">
                 <div class="text-center mb-4">
-                    <h3 class="text-lg font-semibold text-gray-800">处理中...</h3>
+                    <h3 class="text-white font-semibold mb-2">正在处理音频...</h3>
+                    <div class="text-white/60 text-sm" id="progressText">0%</div>
                 </div>
-                <div class="relative">
-                    <div class="w-full bg-gray-200 rounded-full h-3">
-                        <div id="progressFill" class="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                <div class="relative h-3 bg-white/20 rounded-full overflow-hidden">
+                    <div id="progressFill" class="h-full bg-gradient-to-r from-green-400 to-blue-500 rounded-full 
+                                                  transition-all duration-300 relative">
+                        <div class="absolute inset-0 wave-animation"></div>
                     </div>
-                    <div id="progressText" class="text-center mt-2 text-sm font-medium text-gray-600">0%</div>
                 </div>
             </div>
 
-            <!-- 结果 -->
-            <div id="result" class="hidden mt-6 text-center">
-                <div class="bg-green-50 rounded-xl p-6">
-                    <i class="fas fa-check-circle text-green-500 text-4xl mb-3"></i>
-                    <h3 class="text-xl font-semibold text-gray-800 mb-2">处理完成！</h3>
-                    <p class="text-gray-600 mb-1">新文件大小: <span id="newFileSize" class="font-bold text-green-600"></span></p>
-                    <button id="downloadBtn" class="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white font-semibold py-3 px-6 rounded-xl transition-all transform hover:scale-105 mt-4">
-                        <i class="fas fa-download mr-2"></i>下载音频
+            <!-- 结果卡片 -->
+            <div id="result" class="hidden mt-6">
+                <div class="bg-white/10 rounded-xl p-6 backdrop-blur-sm text-center">
+                    <div class="w-16 h-16 bg-green-400/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-check text-green-300 text-2xl"></i>
+                    </div>
+                    <h3 class="text-white font-bold text-xl mb-2">处理完成！</h3>
+                    <p class="text-white/70 mb-1">新文件大小: <span id="newFileSize" class="text-green-300 font-bold"></span></p>
+                    <button id="downloadBtn" class="mt-4 w-full bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 
+                                                   text-white font-bold py-3 px-6 rounded-xl transition-all duration-300 
+                                                   shadow-lg hover:shadow-xl transform hover:scale-105">
+                        <i class="fas fa-download mr-2"></i>立即下载
                     </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 设置模态框 -->
-    <div id="settingsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-2xl p-8 m-4 max-w-sm w-full transform transition-all">
+    <!-- 高级设置模态框 -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="glass-card rounded-2xl p-6 w-full max-w-sm transform transition-all duration-300 scale-100">
             <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold text-gray-800">压缩设置</h2>
-                <button id="closeModal" class="text-gray-400 hover:text-gray-600">
+                <h2 class="text-white font-bold text-xl">高级设置</h2>
+                <button id="closeModal" class="text-white/60 hover:text-white transition-colors">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
             
             <div class="space-y-6">
+                <!-- 压缩等级 -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-3">压缩等级</label>
-                    <input type="range" id="qualitySlider" min="1" max="5" value="3" 
-                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider">
-                    <div class="flex justify-between text-xs text-gray-500 mt-2">
-                        <span>1级</span><span>2级</span><span>3级</span><span>4级</span><span>5级</span>
+                    <label class="block text-white/90 font-medium mb-3">压缩等级</label>
+                    <div class="relative">
+                        <input type="range" id="qualitySlider" min="1" max="5" value="3" 
+                               class="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between text-xs text-white/60 mt-2">
+                            <span>1级</span><span>2级</span><span>3级</span><span>4级</span><span>5级</span>
+                        </div>
                     </div>
                 </div>
-                
-                <div id="qualityDescription" class="bg-blue-50 rounded-lg p-4 text-sm">
-                    3级：压缩到1比特，无失真
+
+                <!-- 输出格式 -->
+                <div>
+                    <label class="block text-white/90 font-medium mb-3">输出格式</label>
+                    <select id="formatSelect" 
+                            class="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-white/50">
+                        <option value="wav" class="bg-gray-800">WAV - 无损音质</option>
+                        <option value="mp3" class="bg-gray-800">MP3 - 通用格式</option>
+                        <option value="ogg" class="bg-gray-800">OGG - 高压缩比</option>
+                    </select>
                 </div>
-                
-                <button id="applySettings" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-xl transition-all">
+
+                <!-- 实时预览 -->
+                <div id="qualityDescription" 
+                     class="bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-lg p-4 text-white/90 text-sm">
+                    3级：16kbps低质量WAV，无失真
+                </div>
+
+                <button id="applySettings" 
+                        class="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 
+                               text-white font-bold py-3 rounded-lg transition-all duration-300 transform hover:scale-105">
                     应用设置
                 </button>
             </div>
