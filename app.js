@@ -1,102 +1,229 @@
-class AudioCompressor {
+class DistortionEngine {
     constructor() {
-        // 延迟创建audioContext直到用户交互
         this.audioContext = null;
+        this.audioBuffer = null;
     }
 
-    async compressAudio(file, qualityLevel, onProgress) {
+    async addDistortion(file, settings, onProgress) {
         try {
-            // 确保在用户交互后创建audioContext
             if (!this.audioContext) {
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
 
             const audioBuffer = await this.fileToAudioBuffer(file);
-            const settings = this.getQualitySettings(qualityLevel);
-
-            // 创建离线音频上下文 - 使用合理的采样率
-            const sampleRate = Math.max(8000, Math.min(44100, audioBuffer.sampleRate));
+            
+            // 创建离线上下文
             const offlineContext = new OfflineAudioContext(
                 audioBuffer.numberOfChannels,
                 audioBuffer.length,
-                sampleRate
+                audioBuffer.sampleRate
             );
 
             // 音频处理链
             const source = offlineContext.createBufferSource();
             source.buffer = audioBuffer;
 
-            // 动态压缩器
-            const compressor = offlineContext.createDynamicsCompressor();
-            compressor.threshold.setValueAtTime(-20, offlineContext.currentTime);
-            compressor.ratio.setValueAtTime(settings.compressionRatio, offlineContext.currentTime);
-            compressor.attack.setValueAtTime(0.003, offlineContext.currentTime);
-            compressor.release.setValueAtTime(0.1, offlineContext.currentTime);
+            // 根据设置应用失真
+            let processedSignal = this.applyDistortionChain(
+                source, 
+                offlineContext, 
+                settings,
+                onProgress
+            );
 
-            // 添加增益控制防止削波
-            const gainNode = offlineContext.createGain();
-            gainNode.gain.setValueAtTime(0.8, offlineContext.currentTime);
-
-            // 失真效果（4-5级）
-            let lastNode = compressor;
-            if (settings.distortion > 0) {
-                const waveShaper = offlineContext.createWaveShaper();
-                waveShaper.curve = this.makeDistortionCurve(settings.distortion);
-                compressor.connect(waveShaper);
-                lastNode = waveShaper;
-            }
-
-            // 连接链路
-            source.connect(gainNode);
-            gainNode.connect(compressor);
-            lastNode.connect(offlineContext.destination);
+            processedSignal.connect(offlineContext.destination);
             source.start();
 
-            // 进度动画
-            let progress = 0;
-            const progressInterval = setInterval(() => {
-                progress = Math.min(progress + 2, 95);
-                onProgress(progress);
-            }, 50);
-
             const renderedBuffer = await offlineContext.startRendering();
-            clearInterval(progressInterval);
-            onProgress(100);
-
-            // 3比特量化
-            return this.create3BitAudio(renderedBuffer);
+            return this.bufferToWav(renderedBuffer);
 
         } catch (error) {
-            console.error('压缩错误:', error);
-            throw new Error(`处理失败: ${error.message}`);
+            throw new Error(`失真处理失败: ${error.message}`);
         }
     }
 
-    getQualitySettings(level) {
-        return {
-            1: { compressionRatio: 2, distortion: 0 },
-            2: { compressionRatio: 3, distortion: 0 },
-            3: { compressionRatio: 4, distortion: 0 },
-            4: { compressionRatio: 4, distortion: 20 },
-            5: { compressionRatio: 4, distortion: 40 }
-        }[level];
+    applyDistortionChain(source, context, settings, onProgress) {
+        let signal = source;
+
+        // 1. 主失真类型
+        switch (settings.type) {
+            case 'digital':
+                signal = this.createDigitalDistortion(signal, context, settings.intensity);
+                break;
+            case 'analog':
+                signal = this.createAnalogDistortion(signal, context, settings.intensity);
+                break;
+            case 'crushed':
+                signal = this.createBitCrush(signal, context, settings.intensity);
+                break;
+            case 'radio':
+                signal = this.createRadioDistortion(signal, context, settings.intensity);
+                break;
+            case 'glitch':
+                signal = this.createGlitchEffect(signal, context, settings.intensity);
+                break;
+        }
+
+        // 2. 额外效果
+        if (settings.noise) {
+            signal = this.addNoise(signal, context, settings.intensity);
+        }
+        if (settings.crackle) {
+            signal = this.addCrackle(signal, context, settings.intensity);
+        }
+
+        return signal;
     }
 
-    makeDistortionCurve(amount) {
-        const samples = 44100;
-        const curve = new Float32Array(samples);
-        for (let i = 0; i < samples; i++) {
-            const x = (i * 2) / samples - 1;
-            curve[i] = Math.tanh(x * amount / 20);
+    // 失真效果实现
+    createDigitalDistortion(source, context, intensity) {
+        const shaper = context.createWaveShaper();
+        const curve = new Float32Array(44100);
+        const gain = Math.min(intensity * 0.5, 8);
+        
+        for (let i = 0; i < 44100; i++) {
+            const x = (i * 2) / 44100 - 1;
+            curve[i] = Math.tanh(x * gain);
         }
-        return curve;
+        shaper.curve = curve;
+        shaper.oversample = '4x';
+        
+        source.connect(shaper);
+        return shaper;
+    }
+
+    createAnalogDistortion(source, context, intensity) {
+        const shaper = context.createWaveShaper();
+        const curve = new Float32Array(44100);
+        const drive = intensity * 0.3;
+        
+        for (let i = 0; i < 44100; i++) {
+            const x = (i * 2) / 44100 - 1;
+            curve[i] = (3 + drive) * x * 20 * Math.PI / 180 / (Math.PI + drive * Math.abs(x));
+        }
+        shaper.curve = curve;
+        
+        source.connect(shaper);
+        return shaper;
+    }
+
+    createBitCrush(source, context, intensity) {
+        const bitDepth = Math.max(2, 16 - intensity * 1.5);
+        const levels = Math.pow(2, bitDepth);
+        
+        const shaper = context.createWaveShaper();
+        const curve = new Float32Array(44100);
+        
+        for (let i = 0; i < 44100; i++) {
+            const x = (i * 2) / 44100 - 1;
+            const level = Math.round(x * levels) / levels;
+            curve[i] = level;
+        }
+        shaper.curve = curve;
+        
+        source.connect(shaper);
+        return shaper;
+    }
+
+    createRadioDistortion(source, context, intensity) {
+        // 模拟收音机效果
+        const filter = context.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1000 + intensity * 200, context.currentTime);
+        filter.Q.setValueAtTime(intensity * 5, context.currentTime);
+
+        const shaper = context.createWaveShaper();
+        const curve = new Float32Array(44100);
+        for (let i = 0; i < 44100; i++) {
+            const x = (i * 2) / 44100 - 1;
+            curve[i] = Math.sin(x * Math.PI * 0.5 * intensity);
+        }
+        shaper.curve = curve;
+
+        source.connect(filter);
+        filter.connect(shaper);
+        return shaper;
+    }
+
+    createGlitchEffect(source, context, intensity) {
+        const bufferSize = context.sampleRate * 2;
+        const scriptNode = context.createScriptProcessor(bufferSize, 1, 1);
+        
+        scriptNode.onaudioprocess = (audioProcessingEvent) => {
+            const inputBuffer = audioProcessingEvent.inputBuffer;
+            const outputBuffer = audioProcessingEvent.outputBuffer;
+            
+            for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
+                const inputData = inputBuffer.getChannelData(channel);
+                const outputData = outputBuffer.getChannelData(channel);
+                
+                for (let i = 0; i < inputBuffer.length; i++) {
+                    if (Math.random() < intensity * 0.01) {
+                        outputData[i] = inputData[i] * (Math.random() - 0.5) * 2;
+                    } else {
+                        outputData[i] = inputData[i];
+                    }
+                }
+            }
+        };
+        
+        source.connect(scriptNode);
+        return scriptNode;
+    }
+
+    addNoise(source, context, intensity) {
+        const bufferSize = context.sampleRate * 2;
+        const noiseNode = context.createScriptProcessor(bufferSize, 1, 1);
+        
+        noiseNode.onaudioprocess = (audioProcessingEvent) => {
+            const inputBuffer = audioProcessingEvent.inputBuffer;
+            const outputBuffer = audioProcessingEvent.outputBuffer;
+            
+            for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
+                const inputData = inputBuffer.getChannelData(channel);
+                const outputData = outputBuffer.getChannelData(channel);
+                
+                for (let i = 0; i < inputBuffer.length; i++) {
+                    const noise = (Math.random() - 0.5) * 2 * (intensity * 0.1);
+                    outputData[i] = inputData[i] + noise;
+                }
+            }
+        };
+        
+        source.connect(noiseNode);
+        return noiseNode;
+    }
+
+    addCrackle(source, context, intensity) {
+        const bufferSize = context.sampleRate * 2;
+        const crackleNode = context.createScriptProcessor(bufferSize, 1, 1);
+        
+        crackleNode.onaudioprocess = (audioProcessingEvent) => {
+            const inputBuffer = audioProcessingEvent.inputBuffer;
+            const outputBuffer = audioProcessingEvent.outputBuffer;
+            
+            for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
+                const inputData = inputBuffer.getChannelData(channel);
+                const outputData = outputBuffer.getChannelData(channel);
+                
+                for (let i = 0; i < inputBuffer.length; i++) {
+                    let sample = inputData[i];
+                    if (Math.random() < intensity * 0.005) {
+                        sample = (Math.random() - 0.5) * 2;
+                    }
+                    outputData[i] = sample;
+                }
+            }
+        };
+        
+        source.connect(crackleNode);
+        return crackleNode;
     }
 
     async fileToAudioBuffer(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = (e) => {
-                // 使用try-catch处理解码错误
                 this.audioContext.decodeAudioData(e.target.result)
                     .then(resolve)
                     .catch(err => reject(new Error('音频解码失败: ' + err.message)));
@@ -104,33 +231,6 @@ class AudioCompressor {
             reader.onerror = () => reject(new Error('文件读取失败'));
             reader.readAsArrayBuffer(file);
         });
-    }
-
-    create3BitAudio(buffer) {
-        // 3比特量化（8个电平）
-        const levels = [-1, -0.714, -0.428, -0.142, 0.142, 0.428, 0.714, 1];
-        
-        const compressedBuffer = this.audioContext.createBuffer(
-            buffer.numberOfChannels,
-            buffer.length,
-            buffer.sampleRate
-        );
-
-        // 量化到8个电平
-        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-            const sourceData = buffer.getChannelData(channel);
-            const targetData = compressedBuffer.getChannelData(channel);
-            
-            for (let i = 0; i < buffer.length; i++) {
-                const sample = sourceData[i];
-                // 映射到8个电平
-                const levelIndex = Math.round(((sample + 1) / 2) * 7);
-                const clampedIndex = Math.max(0, Math.min(7, levelIndex));
-                targetData[i] = levels[clampedIndex];
-            }
-        }
-
-        return this.bufferToWav(compressedBuffer);
     }
 
     bufferToWav(buffer) {
@@ -171,12 +271,17 @@ class AudioCompressor {
     }
 }
 
-// 修复后的UI控制
-class AudioUI {
+// 用户界面
+class DistortionUI {
     constructor() {
         this.selectedFile = null;
-        this.currentQuality = 3;
-        this.compressor = new AudioCompressor();
+        this.distortion = new DistortionEngine();
+        this.settings = {
+            type: 'digital',
+            intensity: 5,
+            noise: false,
+            crackle: false
+        };
         this.initializeElements();
         this.bindEvents();
     }
@@ -187,25 +292,23 @@ class AudioUI {
             audioInput: document.getElementById('audioInput'),
             audioInfo: document.getElementById('audioInfo'),
             controls: document.getElementById('controls'),
-            progressContainer: document.getElementById('progressContainer'),
             result: document.getElementById('result'),
-            settingsModal: document.getElementById('settingsModal'),
             fileName: document.getElementById('fileName'),
             duration: document.getElementById('duration'),
             fileSize: document.getElementById('fileSize'),
             newFileSize: document.getElementById('newFileSize'),
-            progressFill: document.getElementById('progressFill'),
-            progressText: document.getElementById('progressText'),
-            qualitySlider: document.getElementById('qualitySlider'),
-            qualityDescription: document.getElementById('qualityDescription')
+            distortionType: document.getElementById('distortionType'),
+            intensitySlider: document.getElementById('intensitySlider'),
+            noiseCheck: document.getElementById('noiseCheck'),
+            crackleCheck: document.getElementById('crackleCheck')
         };
     }
 
     bindEvents() {
-        // 用户交互后创建AudioContext
+        // 初始化AudioContext
         const initAudio = () => {
-            if (!this.compressor.audioContext) {
-                this.compressor.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            if (!this.distortion.audioContext) {
+                this.distortion.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
         };
 
@@ -222,17 +325,26 @@ class AudioUI {
             this.handleFile(e.dataTransfer.files[0]);
         });
 
-        document.getElementById('settingsBtn').addEventListener('click', () => this.showModal());
-        document.getElementById('closeModal').addEventListener('click', () => this.hideModal());
-        document.getElementById('applySettings').addEventListener('click', () => this.applySettings());
-        this.elements.qualitySlider.addEventListener('input', () => this.updateQualityDescription());
-        document.getElementById('compressBtn').addEventListener('click', () => {
+        document.getElementById('processBtn').addEventListener('click', () => {
             initAudio();
-            this.compress();
+            this.processAudio();
         });
+
         document.getElementById('downloadBtn').addEventListener('click', () => this.download());
 
-        this.updateQualityDescription();
+        // 实时设置更新
+        this.elements.distortionType.addEventListener('change', (e) => {
+            this.settings.type = e.target.value;
+        });
+        this.elements.intensitySlider.addEventListener('input', (e) => {
+            this.settings.intensity = parseInt(e.target.value);
+        });
+        this.elements.noiseCheck.addEventListener('change', (e) => {
+            this.settings.noise = e.target.checked;
+        });
+        this.elements.crackleCheck.addEventListener('change', (e) => {
+            this.settings.crackle = e.target.checked;
+        });
     }
 
     handleFile(file) {
@@ -253,76 +365,51 @@ class AudioUI {
 
         this.showElement(this.elements.audioInfo);
         this.showElement(this.elements.controls);
+        this.hideElement(this.elements.result);
     }
 
-    showModal() {
-        this.elements.settingsModal.classList.remove('hidden');
-        this.elements.settingsModal.classList.add('flex');
-    }
-
-    hideModal() {
-        this.elements.settingsModal.classList.add('hidden');
-        this.elements.settingsModal.classList.remove('flex');
-    }
-
-    applySettings() {
-        this.currentQuality = parseInt(this.elements.qualitySlider.value);
-        this.hideModal();
-    }
-
-    updateQualityDescription() {
-        const level = this.elements.qualitySlider.value;
-        const descriptions = {
-            1: '1级：3比特8电平，轻度量化噪声',
-            2: '2级：3比特8电平，中度量化噪声',
-            3: '3级：3比特8电平，重度量化噪声',
-            4: '3比特+轻度失真，Lo-Fi效果',
-            5: '3比特+强失真，复古效果'
-        };
-        this.elements.qualityDescription.textContent = descriptions[level];
-    }
-
-    async compress() {
-        if (!this.selectedFile || !this.compressor.audioContext) {
+    async processAudio() {
+        if (!this.selectedFile) {
             alert('请先选择音频文件！');
             return;
         }
 
-        this.hideElement(this.elements.controls);
-        this.showElement(this.elements.progressContainer);
-        this.hideElement(this.elements.result);
+        document.getElementById('processBtn').innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>损坏中...';
+        document.getElementById('processBtn').disabled = true;
 
         try {
-            const compressedBlob = await this.compressor.compressAudio(
+            const distortedBlob = await this.distortion.addDistortion(
                 this.selectedFile,
-                this.currentQuality,
-                null,
+                this.settings,
                 (progress) => {
-                    this.elements.progressFill.style.width = `${progress}%`;
-                    this.elements.progressText.textContent = `${progress}%`;
+                    // 可以添加进度动画
                 }
             );
 
-            this.compressedBlob = compressedBlob;
-            this.elements.newFileSize.textContent = this.formatFileSize(compressedBlob.size);
+            this.distortedBlob = distortedBlob;
+            this.elements.newFileSize.textContent = this.formatFileSize(distortedBlob.size);
             
-            this.hideElement(this.elements.progressContainer);
             this.showElement(this.elements.result);
+            document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt mr-2"></i>已损坏';
+            setTimeout(() => {
+                document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt mr-2"></i>再次损坏';
+                document.getElementById('processBtn').disabled = false;
+            }, 2000);
 
         } catch (error) {
-            console.error('压缩失败:', error);
-            alert('处理失败: ' + error.message + '\n请尝试重新上传文件');
-            this.showElement(this.elements.controls);
-            this.hideElement(this.elements.progressContainer);
+            console.error('处理失败:', error);
+            alert('损坏失败: ' + error.message);
+            document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt mr-2"></i>重新损坏';
+            document.getElementById('processBtn').disabled = false;
         }
     }
 
     download() {
-        if (this.compressedBlob) {
-            const url = URL.createObjectURL(this.compressedBlob);
+        if (this.distortedBlob) {
+            const url = URL.createObjectURL(this.distortedBlob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `3bit_${this.selectedFile.name.replace(/\.[^/.]+$/, "")}.wav`;
+            a.download = `damaged_${this.selectedFile.name.replace(/\.[^/.]+$/, "")}.wav`;
             a.click();
             URL.revokeObjectURL(url);
         }
@@ -351,7 +438,7 @@ class AudioUI {
     }
 }
 
-// 初始化应用
+// 初始化
 document.addEventListener('DOMContentLoaded', () => {
-    new AudioUI();
+    new DistortionUI();
 });
