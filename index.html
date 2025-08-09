@@ -2,132 +2,129 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>全损音质生成器 - 修复版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>全损音质生成器 - 全平台版</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .cyber-bg {
-            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
-        }
-        .neon-glow {
-            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
-        }
-        .upload-hover {
-            border-color: #00ffff !important;
-            background-color: rgba(0, 255, 255, 0.1) !important;
-        }
+        /* 修复移动端点击高亮 */
+        * { -webkit-tap-highlight-color: transparent; }
+        /* 防止滚动 */
+        body { overflow-x: hidden; }
+        /* 修复iOS滚动 */
+        .ios-scroll { -webkit-overflow-scrolling: touch; }
     </style>
 </head>
-<body class="cyber-bg min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-md">
-        <!-- 主卡片 -->
-        <div class="bg-gray-900/80 backdrop-blur-xl rounded-3xl p-8 border border-cyan-500/30 neon-glow">
-            
-            <!-- 标题 -->
-            <div class="text-center mb-8">
-                <div class="w-20 h-20 bg-gradient-to-r from-red-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-bolt text-3xl text-white"></i>
-                </div>
-                <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-purple-400 mb-2">
-                    全损音质生成器
-                </h1>
-                <p class="text-gray-400 text-sm">零压缩 • 纯失真 • 完美损坏</p>
+<body class="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 min-h-screen flex items-center justify-center p-4">
+    
+    <!-- 📱 主容器 -->
+    <div class="w-full max-w-sm md:max-w-md bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden">
+        
+        <!-- 标题区域 -->
+        <div class="text-center p-6 bg-gradient-to-r from-pink-500/20 to-purple-500/20">
+            <div class="w-16 h-16 bg-gradient-to-r from-pink-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                <i class="fas fa-bolt text-2xl text-white"></i>
             </div>
+            <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">全损音质</h1>
+            <p class="text-white/70 text-xs md:text-sm">零压缩 • 纯失真 • 全平台</p>
+        </div>
 
-            <!-- ✅ 修复后的上传区域 -->
-            <div id="uploadArea" class="relative">
-                <input type="file" id="audioInput" accept="audio/*" class="hidden">
-                <div class="border-2 border-dashed border-gray-600 rounded-2xl p-8 text-center cursor-pointer 
-                            hover:border-cyan-500/50 hover:bg-gray-800/50 transition-all">
-                    <i class="fas fa-upload text-5xl text-gray-500 mb-4"></i>
-                    <p class="text-gray-300 font-semibold mb-1">点击或拖拽音频文件</p>
-                    <p class="text-gray-500 text-xs">MP3 WAV FLAC M4A OGG</p>
+        <!-- 上传区域（修复版） -->
+        <div class="p-4 md:p-6">
+            
+            <!-- ✅ 移动友好的上传按钮 -->
+            <div class="relative mb-4">
+                <input type="file" 
+                       id="audioInput" 
+                       accept="audio/*" 
+                       class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                       aria-label="选择音频文件">
+                <div class="border-2 border-dashed border-white/30 rounded-2xl p-6 text-center
+                            hover:border-pink-500/50 hover:bg-white/5 transition-all">
+                    <i class="fas fa-cloud-upload-alt text-4xl md:text-5xl text-white/60 mb-3"></i>
+                    <p class="text-white/80 font-medium text-sm md:text-base mb-1">点击选择音频</p>
+                    <p class="text-white/50 text-xs">支持所有格式</p>
                 </div>
             </div>
 
             <!-- 音频信息 -->
-            <div id="audioInfo" class="hidden mt-6">
-                <div class="bg-gray-800/50 rounded-xl p-4">
-                    <div class="flex items-center mb-3">
-                        <i class="fas fa-file-audio text-cyan-400 mr-3"></i>
-                        <span id="fileName" class="text-white font-medium truncate"></span>
+            <div id="audioInfo" class="hidden mb-4">
+                <div class="bg-white/5 rounded-xl p-3 md:p-4">
+                    <div class="flex items-center mb-2">
+                        <i class="fas fa-file-audio text-pink-400 mr-2"></i>
+                        <span id="fileName" class="text-white text-sm truncate flex-1"></span>
                     </div>
-                    <div class="grid grid-cols-2 gap-4 text-sm text-gray-400">
+                    <div class="grid grid-cols-2 gap-2 text-xs text-white/70">
                         <div><i class="fas fa-clock mr-1"></i><span id="duration"></span></div>
                         <div><i class="fas fa-database mr-1"></i><span id="fileSize"></span></div>
                     </div>
                 </div>
             </div>
 
-            <!-- 失真控制器 -->
-            <div id="controls" class="hidden mt-6 space-y-6">
+            <!-- 控制面板 -->
+            <div id="controls" class="hidden space-y-3 md:space-y-4">
                 
                 <!-- 失真类型 -->
                 <div>
-                    <label class="text-cyan-400 font-medium mb-2 block">失真类型</label>
-                    <select id="distortionType" class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white">
-                        <option value="digital">数字失真</option>
-                        <option value="analog">模拟管失真</option>
-                        <option value="crushed">比特粉碎</option>
-                        <option value="radio">收音机失真</option>
-                        <option value="glitch">故障艺术</option>
+                    <label class="text-pink-400 font-medium text-sm mb-1 block">失真类型</label>
+                    <select id="distortionType" 
+                            class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm">
+                        <option value="digital">💻 数字失真</option>
+                        <option value="analog">🎸 模拟管失真</option>
+                        <option value="crushed">🔧 比特粉碎</option>
+                        <option value="radio">📻 收音机失真</option>
+                        <option value="glitch">⚡ 故障艺术</option>
                     </select>
                 </div>
 
                 <!-- 强度滑块 -->
                 <div>
-                    <label class="text-cyan-400 font-medium mb-2 block">失真强度</label>
+                    <label class="text-pink-400 font-medium text-sm mb-1 block">强度: <span id="intensityValue" class="text-cyan-400">5</span></label>
                     <input type="range" id="intensitySlider" min="1" max="10" value="5" 
-                           class="w-full h-2 bg-gray-700 rounded-lg appearance-none">
-                    <div class="flex justify-between text-xs text-gray-500 mt-1">
-                        <span>轻</span><span>中</span><span>重</span><span>全损</span>
-                    </div>
+                           class="w-full h-2 bg-white/20 rounded-lg appearance-none">
                 </div>
 
-                <!-- 额外效果 -->
-                <div class="grid grid-cols-2 gap-3">
+                <!-- 效果开关 -->
+                <div class="grid grid-cols-2 gap-2">
                     <label class="flex items-center">
-                        <input type="checkbox" id="noiseCheck" class="mr-2">
-                        <span class="text-gray-300 text-sm">底噪</span>
+                        <input type="checkbox" id="noiseCheck" class="mr-1">
+                        <span class="text-white text-xs">底噪</span>
                     </label>
                     <label class="flex items-center">
-                        <input type="checkbox" id="crackleCheck" class="mr-2">
-                        <span class="text-gray-300 text-sm">爆裂音</span>
+                        <input type="checkbox" id="crackleCheck" class="mr-1">
+                        <span class="text-white text-xs">爆裂音</span>
                     </label>
                 </div>
 
-                <!-- 修复后的按钮 -->
-                <button id="processBtn" class="w-full bg-gradient-to-r from-red-500 to-purple-600 text-white font-bold py-3 rounded-xl 
-                                              hover:from-red-600 hover:to-purple-700 transition-all">
-                    <i class="fas fa-bolt mr-2"></i>生成全损音质
+                <!-- 操作按钮 -->
+                <button id="processBtn" 
+                        class="w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold py-3 rounded-xl
+                               active:scale-95 transition-transform">
+                    <i class="fas fa-bolt mr-1"></i>生成全损
                 </button>
             </div>
 
-            <!-- 进度条容器 -->
-            <div id="progressContainer" class="hidden mt-6">
-                <div class="text-center mb-4">
-                    <h3 class="text-white font-semibold mb-2">正在损坏音频...</h3>
-                    <div class="text-white/60 text-sm" id="progressText">0%</div>
+            <!-- 进度条 -->
+            <div id="progressContainer" class="hidden">
+                <div class="text-center mb-3">
+                    <h3 class="text-white font-semibold text-sm mb-1">损坏中...</h3>
+                    <div class="text-white/60 text-xs" id="progressText">0%</div>
                 </div>
-                <div class="relative h-3 bg-white/20 rounded-full overflow-hidden">
-                    <div id="progressFill" class="h-full bg-gradient-to-r from-red-500 to-purple-500 rounded-full transition-all duration-300"></div>
-                </div>
-                <div class="text-center mt-2">
-                    <div id="progressStep" class="text-xs text-gray-400">准备中...</div>
+                <div class="h-2 bg-white/20 rounded-full overflow-hidden">
+                    <div id="progressFill" class="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full transition-all"></div>
                 </div>
             </div>
 
             <!-- 结果 -->
-            <div id="result" class="hidden mt-6">
-                <div class="bg-gradient-to-r from-green-500/20 to-blue-500/20 rounded-xl p-6 text-center">
-                    <i class="fas fa-check-circle text-green-400 text-3xl mb-3"></i>
-                    <h3 class="text-white font-bold mb-2">全损完成！</h3>
-                    <p class="text-gray-400 mb-3">文件已损坏到完美状态</p>
-                    <button id="downloadBtn" class="w-full bg-gradient-to-r from-green-500 to-blue-500 text-white font-bold py-3 rounded-xl">
-                        <i class="fas fa-download mr-2"></i>下载损坏版
-                    </button>
-                </div>
+            <div id="result" class="hidden text-center">
+                <i class="fas fa-check-circle text-green-400 text-2xl mb-2"></i>
+                <p class="text-white text-sm mb-2">已损坏成功！</p>
+                <button id="downloadBtn" 
+                        class="w-full bg-gradient-to-r from-green-500 to-blue-500 text-white font-bold py-2 rounded-xl">
+                    <i class="fas fa-download mr-1"></i>下载
+                </button>
             </div>
         </div>
     </div>
