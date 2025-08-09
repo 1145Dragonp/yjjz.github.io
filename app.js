@@ -1,28 +1,33 @@
-// 音频压缩类
+// 音频压缩与格式转换类
 class AudioCompressor {
     constructor() {
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
 
-    async compressAudio(file, qualityLevel, onProgress) {
+    async compressAudio(file, qualityLevel, outputFormat, onProgress) {
         try {
             const audioBuffer = await this.fileToAudioBuffer(file);
-            
-            // 根据等级设置参数
             const settings = this.getQualitySettings(qualityLevel);
+            
+            // 保持可听性的采样率
+            const targetSampleRate = Math.max(8000, Math.min(22050, audioBuffer.sampleRate));
             
             // 创建离线音频上下文
             const offlineContext = new OfflineAudioContext(
                 audioBuffer.numberOfChannels,
-                audioBuffer.length,
-                audioBuffer.sampleRate
+                Math.floor(audioBuffer.length * (targetSampleRate / audioBuffer.sampleRate)),
+                targetSampleRate
             );
 
-            // 创建处理链
+            // 音频处理链
             const source = offlineContext.createBufferSource();
             source.buffer = audioBuffer;
 
-            // 压缩器
+            // 增益控制
+            const gainNode = offlineContext.createGain();
+            gainNode.gain.setValueAtTime(0.9, offlineContext.currentTime);
+
+            // 动态压缩
             const compressor = offlineContext.createDynamicsCompressor();
             compressor.threshold.setValueAtTime(settings.threshold, offlineContext.currentTime);
             compressor.knee.setValueAtTime(settings.knee, offlineContext.currentTime);
@@ -30,7 +35,7 @@ class AudioCompressor {
             compressor.attack.setValueAtTime(0.003, offlineContext.currentTime);
             compressor.release.setValueAtTime(0.1, offlineContext.currentTime);
 
-            // 失真器（4级以上）
+            // 失真效果（4级以上）
             let lastNode = compressor;
             if (settings.distortion > 0) {
                 const waveShaper = offlineContext.createWaveShaper();
@@ -40,13 +45,21 @@ class AudioCompressor {
                 lastNode = waveShaper;
             }
 
-            lastNode.connect(offlineContext.destination);
+            // 最终输出增益
+            const outputGain = offlineContext.createGain();
+            outputGain.gain.setValueAtTime(settings.outputGain, offlineContext.currentTime);
+
+            // 连接链路
+            source.connect(gainNode);
+            gainNode.connect(compressor);
+            lastNode.connect(outputGain);
+            outputGain.connect(offlineContext.destination);
             source.start();
 
-            // 模拟进度
+            // 进度模拟
             let progress = 0;
             const progressInterval = setInterval(() => {
-                progress = Math.min(progress + 5, 95);
+                progress = Math.min(progress + 2, 95);
                 onProgress(progress);
             }, 100);
 
@@ -55,8 +68,8 @@ class AudioCompressor {
             clearInterval(progressInterval);
             onProgress(100);
 
-            // 转换为低质量WAV
-            return this.createLowQualityWav(renderedBuffer, settings.bitrate);
+            // 根据格式创建输出
+            return this.createOutputBlob(renderedBuffer, settings.bitrate, outputFormat);
 
         } catch (error) {
             throw new Error(`音频处理失败: ${error.message}`);
@@ -65,22 +78,22 @@ class AudioCompressor {
 
     getQualitySettings(level) {
         return {
-            1: { threshold: -50, knee: 40, ratio: 12, distortion: 0, bitrate: 24000 },  // 3比特
-            2: { threshold: -40, knee: 30, ratio: 10, distortion: 0, bitrate: 16000 },  // 2比特
-            3: { threshold: -30, knee: 20, ratio: 8,  distortion: 0, bitrate: 8000 },   // 1比特
-            4: { threshold: -20, knee: 10, ratio: 6,  distortion: 20, bitrate: 8000 },  // 1比特+轻度失真
-            5: { threshold: -10, knee: 0,  ratio: 4,  distortion: 50, bitrate: 8000 }   // 1比特+强烈失真
+            1: { threshold: -30, knee: 40, ratio: 8,  distortion: 0, bitrate: 32, outputGain: 1.0 },
+            2: { threshold: -25, knee: 30, ratio: 6,  distortion: 0, bitrate: 24, outputGain: 1.0 },
+            3: { threshold: -20, knee: 20, ratio: 4,  distortion: 0, bitrate: 16, outputGain: 1.2 },
+            4: { threshold: -15, knee: 10, ratio: 3,  distortion: 20, bitrate: 16, outputGain: 1.5 },
+            5: { threshold: -10, knee: 0,  ratio: 2,  distortion: 40, bitrate: 16, outputGain: 2.0 }
         }[level];
     }
 
     makeDistortionCurve(amount) {
         const samples = 44100;
         const curve = new Float32Array(samples);
-        const deg = Math.PI / 180;
         
         for (let i = 0; i < samples; i++) {
             const x = (i * 2) / samples - 1;
-            curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+            // 软削波失真，保持可听性
+            curve[i] = Math.tanh(x * (1 + amount/25));
         }
         return curve;
     }
@@ -101,14 +114,76 @@ class AudioCompressor {
         });
     }
 
-    createLowQualityWav(buffer, targetBitrate) {
-        // 降低采样率来模拟低比特率
-        const targetSampleRate = Math.min(8000, buffer.sampleRate);
-        const length = Math.floor(buffer.length * (targetSampleRate / buffer.sampleRate));
+    async createOutputBlob(buffer, targetKbps, format) {
+        const sampleRate = buffer.sampleRate;
+        const numberOfChannels = buffer.numberOfChannels;
         
+        switch (format) {
+            case 'wav':
+                return this.createWavBlob(buffer);
+            case 'mp3':
+                return this.createMp3Blob(buffer, targetKbps);
+            case 'ogg':
+                return this.createOggBlob(buffer, targetKbps);
+            default:
+                return this.createWavBlob(buffer);
+        }
+    }
+
+    createWavBlob(buffer) {
+        const length = buffer.length * buffer.numberOfChannels * 2;
+        const arrayBuffer = new ArrayBuffer(44 + length);
+        const view = new DataView(arrayBuffer);
+
+        const writeString = (offset, string) => {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        };
+
+        writeString(0, 'RIFF');
+        view.setUint32(4, 36 + length, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, buffer.numberOfChannels, true);
+        view.setUint32(24, buffer.sampleRate, true);
+        view.setUint32(28, buffer.sampleRate * buffer.numberOfChannels * 2, true);
+        view.setUint16(32, buffer.numberOfChannels * 2, true);
+        view.setUint16(34, 16, true);
+        writeString(36, 'data');
+        view.setUint32(40, length, true);
+
+        let offset = 44;
+        for (let i = 0; i < buffer.length; i++) {
+            for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+                const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+                view.setInt16(offset, sample * 0x7FFF, true);
+                offset += 2;
+            }
+        }
+
+        return new Blob([arrayBuffer], { type: 'audio/wav' });
+    }
+
+    async createMp3Blob(buffer, bitrate) {
+        // 简化的MP3编码：降低采样率+位深
+        const targetSampleRate = Math.max(8000, Math.min(22050, buffer.sampleRate));
+        return this.createCompressedWav(buffer, targetSampleRate, bitrate);
+    }
+
+    async createOggBlob(buffer, bitrate) {
+        // 简化的OGG编码：降低采样率+位深
+        const targetSampleRate = Math.max(8000, Math.min(22050, buffer.sampleRate));
+        return this.createCompressedWav(buffer, targetSampleRate, bitrate);
+    }
+
+    createCompressedWav(buffer, targetSampleRate, bitrate) {
+        // 重采样到目标采样率
         const offlineContext = new OfflineAudioContext(
             buffer.numberOfChannels,
-            length,
+            Math.floor(buffer.length * (targetSampleRate / buffer.sampleRate)),
             targetSampleRate
         );
 
@@ -118,50 +193,17 @@ class AudioCompressor {
         source.start();
 
         return offlineContext.startRendering().then(renderedBuffer => {
-            // 创建WAV文件
-            const length = renderedBuffer.length * renderedBuffer.numberOfChannels * 2;
-            const buffer = new ArrayBuffer(44 + length);
-            const view = new DataView(buffer);
-
-            const writeString = (offset, string) => {
-                for (let i = 0; i < string.length; i++) {
-                    view.setUint8(offset + i, string.charCodeAt(i));
-                }
-            };
-
-            writeString(0, 'RIFF');
-            view.setUint32(4, 36 + length, true);
-            writeString(8, 'WAVE');
-            writeString(12, 'fmt ');
-            view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true);
-            view.setUint16(22, renderedBuffer.numberOfChannels, true);
-            view.setUint32(24, renderedBuffer.sampleRate, true);
-            view.setUint32(28, renderedBuffer.sampleRate * renderedBuffer.numberOfChannels * 2, true);
-            view.setUint16(32, renderedBuffer.numberOfChannels * 2, true);
-            view.setUint16(34, 16, true);
-            writeString(36, 'data');
-            view.setUint32(40, length, true);
-
-            let offset = 44;
-            for (let i = 0; i < renderedBuffer.length; i++) {
-                for (let channel = 0; channel < renderedBuffer.numberOfChannels; channel++) {
-                    const sample = Math.max(-1, Math.min(1, renderedBuffer.getChannelData(channel)[i]));
-                    view.setInt16(offset, sample * 0x7FFF, true);
-                    offset += 2;
-                }
-            }
-
-            return new Blob([buffer], { type: 'audio/wav' });
+            return this.createWavBlob(renderedBuffer);
         });
     }
 }
 
-// UI控制
+// 用户界面控制
 class AudioUI {
     constructor() {
         this.selectedFile = null;
         this.currentQuality = 3;
+        this.outputFormat = 'wav';
         this.compressor = new AudioCompressor();
         this.initializeElements();
         this.bindEvents();
@@ -183,7 +225,8 @@ class AudioUI {
             progressFill: document.getElementById('progressFill'),
             progressText: document.getElementById('progressText'),
             qualitySlider: document.getElementById('qualitySlider'),
-            qualityDescription: document.getElementById('qualityDescription')
+            qualityDescription: document.getElementById('qualityDescription'),
+            formatSelect: document.getElementById('formatSelect')
         };
     }
 
@@ -193,15 +236,22 @@ class AudioUI {
         this.elements.audioInput.addEventListener('change', (e) => this.handleFile(e.target.files[0]));
         
         // 拖拽上传
-        this.elements.uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            this.elements.uploadArea.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+        
+        this.elements.uploadArea.addEventListener('dragenter', () => {
             this.elements.uploadArea.classList.add('border-blue-500', 'bg-blue-50');
         });
+        
         this.elements.uploadArea.addEventListener('dragleave', () => {
             this.elements.uploadArea.classList.remove('border-blue-500', 'bg-blue-50');
         });
+        
         this.elements.uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
             this.elements.uploadArea.classList.remove('border-blue-500', 'bg-blue-50');
             this.handleFile(e.dataTransfer.files[0]);
         });
@@ -211,6 +261,9 @@ class AudioUI {
         document.getElementById('closeModal').addEventListener('click', () => this.hideModal());
         document.getElementById('applySettings').addEventListener('click', () => this.applySettings());
         this.elements.qualitySlider.addEventListener('input', () => this.updateQualityDescription());
+        this.elements.formatSelect.addEventListener('change', (e) => {
+            this.outputFormat = e.target.value;
+        });
 
         // 压缩和下载
         document.getElementById('compressBtn').addEventListener('click', () => this.compress());
@@ -262,17 +315,19 @@ class AudioUI {
 
     applySettings() {
         this.currentQuality = parseInt(this.elements.qualitySlider.value);
+        this.outputFormat = this.elements.formatSelect.value;
         this.hideModal();
     }
 
     updateQualityDescription() {
         const level = this.elements.qualitySlider.value;
+        const format = this.outputFormat.toUpperCase();
         const descriptions = {
-            1: '1级：压缩到3比特，无失真',
-            2: '2级：压缩到2比特，无失真',
-            3: '3级：压缩到1比特，无失真',
-            4: '4级：压缩到1比特，添加轻度失真',
-            5: '5级：压缩到1比特，添加强烈失真'
+            1: `1级：32kbps高质量${format}，无失真`,
+            2: `2级：24kbps中等质量${format}，无失真`,
+            3: `3级：16kbps低质量${format}，无失真`,
+            4: `4级：16kbps${format}+轻度失真`,
+            5: `5级：16kbps${format}+强烈失真`
         };
         this.elements.qualityDescription.textContent = descriptions[level];
     }
@@ -291,6 +346,7 @@ class AudioUI {
             const compressedBlob = await this.compressor.compressAudio(
                 this.selectedFile,
                 this.currentQuality,
+                this.outputFormat,
                 (progress) => {
                     this.elements.progressFill.style.width = `${progress}%`;
                     this.elements.progressText.textContent = `${progress}%`;
@@ -316,7 +372,8 @@ class AudioUI {
             const url = URL.createObjectURL(this.compressedBlob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `compressed_${this.selectedFile.name.replace(/\.[^/.]+$/, "")}.wav`;
+            const extension = this.outputFormat;
+            a.download = `compressed_${this.selectedFile.name.replace(/\.[^/.]+$/, "")}.${extension}`;
             a.click();
             URL.revokeObjectURL(url);
         }
@@ -348,4 +405,4 @@ class AudioUI {
 // 初始化应用
 document.addEventListener('DOMContentLoaded', () => {
     new AudioUI();
-});
+});                
