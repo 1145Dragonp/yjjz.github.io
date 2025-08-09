@@ -3,52 +3,185 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>全损音质 - 最终版</title>
+    <title>全损音质生成器 - 可调损坏</title>
     <style>
-        body { margin: 0; padding: 20px; font-family: Arial; background: #111; color: white; }
-        .container { max-width: 500px; margin: 0 auto; }
-        .upload-area { border: 2px dashed #666; padding: 40px; text-align: center; cursor: pointer; }
-        .upload-area:hover { border-color: #0ff; }
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            max-width: 500px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .upload-area {
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+        
+        .upload-area:hover {
+            border-color: #00ffff;
+            background: rgba(0, 255, 255, 0.1);
+        }
+        
         .hidden { display: none; }
-        .progress { height: 10px; background: #333; border-radius: 5px; overflow: hidden; }
-        .progress-bar { height: 100%; background: linear-gradient(90deg, #f0f, #0ff); width: 0%; transition: width 0.3s; }
+        
+        .progress-bar {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff006e, #00ffff);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin: 5px 0;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(90deg, #ff006e, #ff4d00);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 0, 110, 0.3);
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            appearance: none;
+            cursor: pointer;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #00ffff;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .control-group {
+            margin: 15px 0;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #00ffff;
+            font-weight: 500;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>全损音质生成器</h1>
+        <h1 style="text-align: center; margin-bottom: 30px; font-size: 28px;">
+            🎛️ 全损音质生成器
+        </h1>
         
-        <!-- 直接文件输入 -->
-        <input type="file" id="audioFile" accept="audio/*" style="display: none;">
+        <!-- 文件上传 -->
         <div class="upload-area" id="uploadArea">
-            <i class="fas fa-cloud-upload-alt"></i>
-            <p>点击选择音频文件</p>
-            <small>支持 MP3, WAV, FLAC, M4A, OGG</small>
+            <input type="file" id="audioFile" accept="audio/*" style="display: none;">
+            <i class="fas fa-cloud-upload-alt" style="font-size: 48px; margin-bottom: 10px;"></i>
+            <p style="margin: 0;">点击或拖拽音频文件</p>
+            <small style="opacity: 0.7;">支持 MP3, WAV, FLAC, M4A, OGG</small>
         </div>
         
-        <!-- 结果 -->
+        <!-- 文件信息 -->
         <div id="fileInfo" class="hidden">
-            <p>文件名: <span id="fileName"></span></p>
-            <p>类型: <span id="fileType"></span></p>
-            <p>大小: <span id="fileSize"></span></p>
-            <button id="processBtn" style="background: #f0f; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">
-                开始处理
-            </button>
-        </div>
-        
-        <!-- 进度条 -->
-        <div id="progressContainer" class="hidden">
-            <div class="progress">
-                <div class="progress-bar" id="progressBar"></div>
+            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                <p><strong>文件:</strong> <span id="fileName"></span></p>
+                <p><strong>类型:</strong> <span id="fileType"></span></p>
+                <p><strong>大小:</strong> <span id="fileSize"></span></p>
+                <p><strong>时长:</strong> <span id="fileDuration"></span></p>
             </div>
-            <p id="progressText">0%</p>
-        </div>
-        
-        <!-- 下载按钮 -->
-        <div id="downloadContainer" class="hidden">
-            <button id="downloadBtn" style="background: #0ff; color: #111; padding: 10px 20px; border: none; border-radius: 5px;">
-                下载损坏版
-            </button>
+            
+            <!-- 控制面板 -->
+            <div id="controls" class="hidden">
+                <div class="control-group">
+                    <label>失真类型</label>
+                    <select id="distortionType" style="width: 100%; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.3); border-radius: 5px; color: white;">
+                        <option value="digital">💻 数字失真</option>
+                        <option value="analog">🎸 模拟管失真</option>
+                        <option value="crushed">🔧 比特粉碎</option>
+                        <option value="radio">📻 收音机失真</option>
+                        <option value="glitch">⚡ 故障艺术</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>损坏程度: <span id="intensityValue">5</span></label>
+                    <input type="range" id="intensitySlider" min="1" max="10" value="5">
+                </div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <label style="flex: 1; display: flex; align-items: center;">
+                        <input type="checkbox" id="noiseCheck">
+                        <span style="margin-left: 5px;">底噪</span>
+                    </label>
+                    <label style="flex: 1; display: flex; align-items: center;">
+                        <input type="checkbox" id="crackleCheck">
+                        <span style="margin-left: 5px;">爆裂音</span>
+                    </label>
+                </div>
+                
+                <button class="btn-primary" id="processBtn">
+                    <i class="fas fa-bolt"></i> 生成全损音质
+                </button>
+            </div>
+            
+            <!-- 进度条 -->
+            <div id="progressContainer" class="hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p id="progressText" style="text-align: center; margin-top: 5px;">0%</p>
+            </div>
+            
+            <!-- 下载区域 -->
+            <div id="downloadContainer" class="hidden">
+                <button class="btn-primary" id="downloadBtn" style="background: linear-gradient(90deg, #00ffff, #0099ff);">
+                    <i class="fas fa-download"></i> 下载损坏版
+                </button>
+            </div>
         </div>
     </div>
 
