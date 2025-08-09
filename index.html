@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音质降低器 - Audio Quality Reducer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="main-container">
+        <div class="content-box">
+            <h1>🎵 音质降低器</h1>
+            <p class="subtitle">一键降低音频质量，添加失真效果</p>
+            
+            <div class="center-section">
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="audioInput" accept="audio/*" hidden>
+                    <div class="upload-content">
+                        <span class="upload-icon">📁</span>
+                        <p>点击选择音频文件 或 拖拽文件到此处</p>
+                        <small>支持 MP3, WAV, M4A, OGG 等格式</small>
+                    </div>
+                </div>
+                
+                <div class="audio-info" id="audioInfo" style="display: none;">
+                    <h3>音频信息</h3>
+                    <p><strong>文件名:</strong> <span id="fileName"></span></p>
+                    <p><strong>时长:</strong> <span id="duration"></span></p>
+                    <p><strong>原始大小:</strong> <span id="fileSize"></span></p>
+                </div>
+                
+                <div class="button-group" id="controls" style="display: none;">
+                    <button class="blue-btn" id="settingsBtn">
+                        ⚙️ 设置选项
+                    </button>
+                    <button class="blue-btn primary-btn" id="compressBtn">
+                        🎯 一键降低音质
+                    </button>
+                </div>
+                
+                <div class="progress-container" id="progressContainer" style="display: none;">
+                    <h3>处理中...</h3>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <p id="progressText">0%</p>
+                </div>
+                
+                <div class="result" id="result" style="display: none;">
+                    <h3>处理完成！</h3>
+                    <p><strong>新文件大小:</strong> <span id="newFileSize"></span></p>
+                    <button class="blue-btn download-btn" id="downloadBtn">
+                        ⬇️ 下载音频
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 设置弹窗 -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <span class="close" id="closeModal">&times;</span>
+            <h2>压缩设置</h2>
+            
+            <div class="setting-group">
+                <label>压缩等级</label>
+                <div class="slider-container">
+                    <input type="range" id="qualitySlider" min="1" max="5" value="3" class="slider">
+                    <div class="slider-labels">
+                        <span>1级</span>
+                        <span>2级</span>
+                        <span>3级</span>
+                        <span>4级</span>
+                        <span>5级</span>
+                    </div>
+                </div>
+                <p class="quality-description" id="qualityDescription">
+                    3级：压缩到3比特，轻微失真
+                </p>
+            </div>
+            
+            <button class="blue-btn" id="applySettings">应用设置</button>
+        </div>
+    </div>
+    
+    <script src="compressor.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
