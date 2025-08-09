@@ -1,6 +1,4 @@
-console.log('🚀 全损音质生成器已启动');
-
-// 音频处理引擎
+// 错误处理增强版
 class DistortionEngine {
     constructor() {
         this.audioContext = null;
@@ -8,40 +6,80 @@ class DistortionEngine {
 
     async addDistortion(file, settings, onProgress) {
         try {
+            // 1. 文件验证
+            this.validateFile(file);
+            
+            // 2. 创建音频上下文（用户交互后）
             if (!this.audioContext) {
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
 
-            // 开始进度
+            // 3. 开始处理
             onProgress(0);
             const audioBuffer = await this.fileToAudioBuffer(file);
             onProgress(20);
 
-            // 处理音频
+            // 4. 处理音频
             const processedBuffer = await this.processAudioBuffer(audioBuffer, settings, onProgress);
             onProgress(100);
 
             return this.bufferToWav(processedBuffer);
 
         } catch (error) {
-            console.error('处理失败:', error);
-            throw new Error(`处理失败: ${error.message}`);
+            throw this.createUserFriendlyError(error);
         }
     }
 
-    async processAudioBuffer(buffer, settings, onProgress) {
+    validateFile(file) {
+        // 文件大小检查
+        const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+        if (file.size > MAX_SIZE) {
+            throw new Error(`文件过大 (${(file.size/1024/1024).toFixed(1)}MB)，请选择小于50MB的音频`);
+        }
+
+        // 文件类型检查
+        const supportedTypes = ['audio/mp3', 'audio/wav', 'audio/flac', 'audio/m4a', 'audio/ogg', 'audio/wave'];
+        if (!file.type || !file.type.startsWith('audio/')) {
+            throw new Error(`不支持的文件类型: ${file.type}，请使用MP3/WAV/FLAC/M4A/OGG`);
+        }
+    }
+
+    fileToAudioBuffer(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                try {
+                    this.audioContext.decodeAudioData(e.target.result)
+                        .then(resolve)
+                        .catch((err) => {
+                            reject(new Error(`音频解码失败: ${err.message || '文件可能损坏'}`));
+                        });
+                } catch (decodeError) {
+                    reject(new Error('浏览器不支持该音频编码'));
+                }
+            };
+            
+            reader.onerror = () => reject(new Error('文件读取失败'));
+            reader.onabort = () => reject(new Error('读取被取消'));
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    processAudioBuffer(buffer, settings, onProgress) {
         const processedBuffer = this.audioContext.createBuffer(
             buffer.numberOfChannels,
             buffer.length,
             buffer.sampleRate
         );
 
-        const totalSteps = 100;
-        const stepSize = Math.floor(buffer.length / totalSteps);
+        // 分批次处理避免阻塞
+        const batchSize = 4096;
+        const totalBatches = Math.ceil(buffer.length / batchSize);
 
-        for (let step = 0; step < totalSteps; step++) {
-            const start = step * stepSize;
-            const end = Math.min(start + stepSize, buffer.length);
+        for (let batch = 0; batch < totalBatches; batch++) {
+            const start = batch * batchSize;
+            const end = Math.min(start + batchSize, buffer.length);
 
             for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
                 const inputData = buffer.getChannelData(channel);
@@ -50,12 +88,12 @@ class DistortionEngine {
                 for (let i = start; i < end; i++) {
                     let sample = inputData[i];
                     
-                    // 应用主失真
-                    sample = this.applyMainDistortion(sample, settings);
+                    // 应用损坏程度
+                    sample = this.applyDamageLevel(sample, settings);
                     
-                    // 应用额外效果
+                    // 额外效果
                     if (settings.noise) {
-                        sample += (Math.random() - 0.5) * 0.1 * settings.intensity;
+                        sample += (Math.random() - 0.5) * 0.05 * settings.intensity;
                     }
                     if (settings.crackle && Math.random() < 0.001 * settings.intensity) {
                         sample = (Math.random() - 0.5) * 2;
@@ -65,37 +103,36 @@ class DistortionEngine {
                 }
             }
             
-            onProgress(20 + (step / totalSteps) * 80);
+            onProgress(20 + (batch / totalBatches) * 80);
         }
 
         return processedBuffer;
     }
 
-    applyMainDistortion(sample, settings) {
-        const intensity = settings.intensity * 0.5;
+    applyDamageLevel(sample, settings) {
+        const intensity = settings.intensity * 0.3;
         
         switch (settings.type) {
             case 'digital':
-                // 数字硬削波
                 return Math.tanh(sample * intensity);
                 
             case 'analog':
-                // 模拟管饱和
                 return Math.sin(sample * intensity * Math.PI * 0.5);
                 
             case 'crushed':
-                // 比特粉碎（可调位深）
+                // 动态位深压缩
                 const bits = Math.max(1, 16 - intensity);
                 const levels = Math.pow(2, bits);
                 return Math.round(sample * levels) / levels;
                 
             case 'radio':
-                // 收音机效果 + 带通
-                return Math.sin(sample * intensity * 2) * 0.7;
+                // 收音机失真 + 带通
+                const radioSample = Math.sin(sample * intensity * 2);
+                return Math.max(-0.7, Math.min(0.7, radioSample));
                 
             case 'glitch':
                 // 随机故障
-                if (Math.random() < 0.01 * intensity) {
+                if (Math.random() < 0.005 * intensity) {
                     return (Math.random() - 0.5) * 2;
                 }
                 return sample;
@@ -105,17 +142,18 @@ class DistortionEngine {
         }
     }
 
-    async fileToAudioBuffer(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                this.audioContext.decodeAudioData(e.target.result)
-                    .then(resolve)
-                    .catch(() => reject(new Error('不支持的音频格式')));
-            };
-            reader.onerror = () => reject(new Error('文件读取失败'));
-            reader.readAsArrayBuffer(file);
-        });
+    createUserFriendlyError(error) {
+        if (error.message.includes('file')) return error; // 保持原始错误
+        
+        if (error.message.includes('decode')) {
+            return new Error('音频解码失败，文件可能已损坏或格式不兼容');
+        }
+        
+        if (error.message.includes('AudioContext')) {
+            return new Error('浏览器不支持音频处理，请使用现代浏览器');
+        }
+        
+        return new Error(`处理失败: ${error.message}`);
     }
 
     bufferToWav(buffer) {
@@ -156,7 +194,7 @@ class DistortionEngine {
     }
 }
 
-// 用户界面控制器
+// 增强版用户界面
 class DistortionUI {
     constructor() {
         this.selectedFile = null;
@@ -166,23 +204,37 @@ class DistortionUI {
     }
 
     init() {
+        this.setupElements();
         this.bindEvents();
-        this.setupProgressBar();
+        this.setupErrorHandling();
+    }
+
+    setupElements() {
+        // 确保所有元素存在
+        const elements = [
+            'audioFile', 'uploadArea', 'fileInfo', 'controls', 'result',
+            'progressContainer', 'fileName', 'fileType', 'fileSize', 'fileDuration',
+            'distortionType', 'intensitySlider', 'intensityValue', 'noiseCheck',
+            'crackleCheck', 'processBtn', 'progressText', 'progressFill', 'downloadBtn'
+        ];
+
+        elements.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) console.error(`❌ 缺少元素: ${id}`);
+        });
     }
 
     bindEvents() {
-        // 文件选择
+        // 文件输入
         const audioInput = document.getElementById('audioFile');
-        audioInput.addEventListener('change', (e) => {
-            this.handleFile(e.target.files[0]);
-        });
+        audioInput.addEventListener('change', (e) => this.handleFile(e.target.files[0]));
 
-        // 点击上传区域
+        // 点击区域
         document.getElementById('uploadArea').addEventListener('click', () => {
             audioInput.click();
         });
 
-        // 拖拽支持
+        // 拖拽
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             document.getElementById('uploadArea').addEventListener(eventName, (e) => {
                 e.preventDefault();
@@ -215,40 +267,63 @@ class DistortionUI {
         document.getElementById('processBtn').addEventListener('click', () => {
             this.processAudio();
         });
-
-        document.getElementById('downloadBtn').addEventListener('click', () => {
-            this.download();
-        });
     }
 
-    setupProgressBar() {
-        // 进度条已内嵌在HTML中
+    setupErrorHandling() {
+        window.addEventListener('error', (e) => {
+            console.error('全局错误:', e.error);
+        });
     }
 
     handleFile(file) {
-        if (!file || !file.type.startsWith('audio/')) {
-            alert('请上传音频文件！支持: MP3, WAV, FLAC, M4A, OGG');
-            return;
-        }
+        if (!file) return;
 
-        this.selectedFile = file;
-        
-        // 显示文件信息
-        document.getElementById('fileName').textContent = file.name;
-        document.getElementById('fileType').textContent = file.type;
-        document.getElementById('fileSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
-        
-        // 获取时长
-        const audio = new Audio(URL.createObjectURL(file));
-        audio.addEventListener('loadedmetadata', () => {
-            document.getElementById('fileDuration').textContent = 
-                `${Math.floor(audio.duration / 60)}:${Math.floor(audio.duration % 60).toString().padStart(2, '0')}`;
-            URL.revokeObjectURL(audio.src);
+        // 详细文件检查
+        console.log('📁 文件信息:', {
+            name: file.name,
+            type: file.type,
+            size: `${(file.size/1024/1024).toFixed(2)}MB`,
+            lastModified: new Date(file.lastModified).toLocaleString()
         });
 
-        // 显示控制面板
-        document.getElementById('fileInfo').style.display = 'block';
-        document.getElementById('controls').style.display = 'block';
+        // 验证文件
+        try {
+            this.validateFile(file);
+            
+            this.selectedFile = file;
+            
+            // 显示文件信息
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileType').textContent = file.type;
+            document.getElementById('fileSize').textContent = `${(file.size/1024).toFixed(1)} KB`;
+            
+            // 获取时长
+            const audio = new Audio(URL.createObjectURL(file));
+            audio.addEventListener('loadedmetadata', () => {
+                document.getElementById('fileDuration').textContent = 
+                    `${Math.floor(audio.duration / 60)}:${Math.floor(audio.duration % 60).toString().padStart(2, '0')}`;
+                URL.revokeObjectURL(audio.src);
+            });
+            
+            // 显示控制面板
+            document.getElementById('fileInfo').style.display = 'block';
+            document.getElementById('controls').style.display = 'block';
+            
+        } catch (error) {
+            alert(error.message);
+        }
+    }
+
+    validateFile(file) {
+        const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+        if (file.size > MAX_SIZE) {
+            throw new Error(`文件过大 (${(file.size/1024/1024).toFixed(1)}MB)，请选择小于50MB的音频`);
+        }
+        
+        const supportedTypes = ['audio/mp3', 'audio/wav', 'audio/flac', 'audio/m4a', 'audio/ogg', 'audio/wave'];
+        if (!file.type || !file.type.startsWith('audio/')) {
+            throw new Error(`不支持的文件类型: ${file.type || '未知'}`);
+        }
     }
 
     async processAudio() {
@@ -257,13 +332,13 @@ class DistortionUI {
             return;
         }
 
-        // 显示进度
-        document.getElementById('controls').style.display = 'none';
-        document.getElementById('progressContainer').style.display = 'block';
-        document.getElementById('processBtn').innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>损坏中...';
-        document.getElementById('processBtn').disabled = true;
-
         try {
+            // 显示进度
+            document.getElementById('controls').style.display = 'none';
+            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('processBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
+            document.getElementById('processBtn').disabled = true;
+
             const result = await this.distortion.addDistortion(
                 this.selectedFile,
                 this.settings,
@@ -273,7 +348,7 @@ class DistortionUI {
                 }
             );
 
-            document.getElementById('newFileSize').textContent = (result.size / 1024).toFixed(1) + ' KB';
+            document.getElementById('newFileSize').textContent = `${(result.size/1024).toFixed(1)} KB`;
             document.getElementById('downloadContainer').style.display = 'block';
             document.getElementById('progressContainer').style.display = 'none';
             
@@ -286,14 +361,15 @@ class DistortionUI {
                 a.click();
             };
             
-            document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt mr-1"></i>再次损坏';
+            document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt"></i> 再次处理';
             document.getElementById('processBtn').disabled = false;
 
         } catch (error) {
-            alert('处理失败: ' + error.message);
+            console.error('处理失败:', error);
+            alert(error.message);
             document.getElementById('controls').style.display = 'block';
             document.getElementById('progressContainer').style.display = 'none';
-            document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt mr-1"></i>重新损坏';
+            document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt"></i> 重新处理';
             document.getElementById('processBtn').disabled = false;
         }
     }
@@ -301,5 +377,6 @@ class DistortionUI {
 
 // 启动应用
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('✅ 全损音质生成器已启动');
     new DistortionUI();
 });
