@@ -10,169 +10,147 @@ class DistortionEngine {
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
 
-            const audioBuffer = await this.fileToAudioBuffer(file);
+            // 开始进度
+            onProgress(0);
             
-            // 创建离线上下文
+            // 第1步：读取文件 (10%)
+            const audioBuffer = await this.fileToAudioBuffer(file);
+            onProgress(10);
+
+            // 第2步：创建上下文 (20%)
             const offlineContext = new OfflineAudioContext(
                 audioBuffer.numberOfChannels,
                 audioBuffer.length,
                 audioBuffer.sampleRate
             );
+            onProgress(20);
 
-            // 音频处理链
+            // 第3步：设置音频源 (30%)
             const source = offlineContext.createBufferSource();
             source.buffer = audioBuffer;
+            onProgress(30);
 
-            // 根据设置应用失真
-            let processedSignal = this.applyDistortionChain(
+            // 第4步：应用失真效果 (60%)
+            const processedSignal = this.applyDistortionChain(
                 source, 
                 offlineContext, 
                 settings,
-                onProgress
+                (stepProgress) => {
+                    // 30% 到 60% 的进度
+                    onProgress(30 + stepProgress * 0.3);
+                }
             );
+            onProgress(60);
 
+            // 第5步：连接并渲染 (90%)
             processedSignal.connect(offlineContext.destination);
             source.start();
-
+            
             const renderedBuffer = await offlineContext.startRendering();
-            return this.bufferToWav(renderedBuffer);
+            onProgress(90);
+
+            // 第6步：导出文件 (100%)
+            const result = this.bufferToWav(renderedBuffer);
+            onProgress(100);
+
+            return result;
 
         } catch (error) {
-            throw new Error(`失真处理失败: ${error.message}`);
+            console.error('失真处理失败:', error);
+            throw new Error(`处理失败: ${error.message}`);
         }
     }
 
-    applyDistortionChain(source, context, settings, onProgress) {
+    applyDistortionChain(source, context, settings, onStepProgress) {
         let signal = source;
+        
+        // 模拟处理步骤
+        const steps = 5;
+        let currentStep = 0;
 
-        // 1. 主失真类型
-        switch (settings.type) {
-            case 'digital':
-                signal = this.createDigitalDistortion(signal, context, settings.intensity);
-                break;
-            case 'analog':
-                signal = this.createAnalogDistortion(signal, context, settings.intensity);
-                break;
-            case 'crushed':
-                signal = this.createBitCrush(signal, context, settings.intensity);
-                break;
-            case 'radio':
-                signal = this.createRadioDistortion(signal, context, settings.intensity);
-                break;
-            case 'glitch':
-                signal = this.createGlitchEffect(signal, context, settings.intensity);
-                break;
-        }
+        // 1. 主失真 (20%)
+        signal = this.createDistortion(signal, context, settings);
+        onStepProgress(++currentStep / steps);
 
-        // 2. 额外效果
+        // 2. 底噪 (40%)
         if (settings.noise) {
             signal = this.addNoise(signal, context, settings.intensity);
         }
+        onStepProgress(++currentStep / steps);
+
+        // 3. 爆裂音 (60%)
         if (settings.crackle) {
             signal = this.addCrackle(signal, context, settings.intensity);
         }
+        onStepProgress(++currentStep / steps);
+
+        // 4. 最终增益 (80%)
+        const gainNode = context.createGain();
+        gainNode.gain.setValueAtTime(0.9, context.currentTime);
+        signal.connect(gainNode);
+        signal = gainNode;
+        onStepProgress(++currentStep / steps);
 
         return signal;
     }
 
-    // 失真效果实现
-    createDigitalDistortion(source, context, intensity) {
+    createDistortion(source, context, settings) {
         const shaper = context.createWaveShaper();
         const curve = new Float32Array(44100);
-        const gain = Math.min(intensity * 0.5, 8);
-        
-        for (let i = 0; i < 44100; i++) {
-            const x = (i * 2) / 44100 - 1;
-            curve[i] = Math.tanh(x * gain);
-        }
-        shaper.curve = curve;
-        shaper.oversample = '4x';
-        
-        source.connect(shaper);
-        return shaper;
-    }
+        const drive = settings.intensity * 0.8;
 
-    createAnalogDistortion(source, context, intensity) {
-        const shaper = context.createWaveShaper();
-        const curve = new Float32Array(44100);
-        const drive = intensity * 0.3;
-        
-        for (let i = 0; i < 44100; i++) {
-            const x = (i * 2) / 44100 - 1;
-            curve[i] = (3 + drive) * x * 20 * Math.PI / 180 / (Math.PI + drive * Math.abs(x));
-        }
-        shaper.curve = curve;
-        
-        source.connect(shaper);
-        return shaper;
-    }
-
-    createBitCrush(source, context, intensity) {
-        const bitDepth = Math.max(2, 16 - intensity * 1.5);
-        const levels = Math.pow(2, bitDepth);
-        
-        const shaper = context.createWaveShaper();
-        const curve = new Float32Array(44100);
-        
-        for (let i = 0; i < 44100; i++) {
-            const x = (i * 2) / 44100 - 1;
-            const level = Math.round(x * levels) / levels;
-            curve[i] = level;
-        }
-        shaper.curve = curve;
-        
-        source.connect(shaper);
-        return shaper;
-    }
-
-    createRadioDistortion(source, context, intensity) {
-        // 模拟收音机效果
-        const filter = context.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.frequency.setValueAtTime(1000 + intensity * 200, context.currentTime);
-        filter.Q.setValueAtTime(intensity * 5, context.currentTime);
-
-        const shaper = context.createWaveShaper();
-        const curve = new Float32Array(44100);
-        for (let i = 0; i < 44100; i++) {
-            const x = (i * 2) / 44100 - 1;
-            curve[i] = Math.sin(x * Math.PI * 0.5 * intensity);
-        }
-        shaper.curve = curve;
-
-        source.connect(filter);
-        filter.connect(shaper);
-        return shaper;
-    }
-
-    createGlitchEffect(source, context, intensity) {
-        const bufferSize = context.sampleRate * 2;
-        const scriptNode = context.createScriptProcessor(bufferSize, 1, 1);
-        
-        scriptNode.onaudioprocess = (audioProcessingEvent) => {
-            const inputBuffer = audioProcessingEvent.inputBuffer;
-            const outputBuffer = audioProcessingEvent.outputBuffer;
-            
-            for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
-                const inputData = inputBuffer.getChannelData(channel);
-                const outputData = outputBuffer.getChannelData(channel);
+        switch (settings.type) {
+            case 'digital':
+                for (let i = 0; i < 44100; i++) {
+                    const x = (i * 2) / 44100 - 1;
+                    curve[i] = Math.tanh(x * drive);
+                }
+                break;
+            case 'analog':
+                for (let i = 0; i < 44100; i++) {
+                    const x = (i * 2) / 44100 - 1;
+                    curve[i] = ((3 + drive) * x * 20 * Math.PI / 180) / (Math.PI + drive * Math.abs(x));
+                }
+                break;
+            case 'crushed':
+                const levels = Math.pow(2, Math.max(2, 16 - drive));
+                for (let i = 0; i < 44100; i++) {
+                    const x = (i * 2) / 44100 - 1;
+                    curve[i] = Math.round(x * levels) / levels;
+                }
+                break;
+            case 'radio':
+                const filter = context.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(1000 + drive * 200, context.currentTime);
+                filter.Q.setValueAtTime(drive * 3, context.currentTime);
+                source.connect(filter);
+                source = filter;
                 
-                for (let i = 0; i < inputBuffer.length; i++) {
-                    if (Math.random() < intensity * 0.01) {
-                        outputData[i] = inputData[i] * (Math.random() - 0.5) * 2;
+                for (let i = 0; i < 44100; i++) {
+                    const x = (i * 2) / 44100 - 1;
+                    curve[i] = Math.sin(x * Math.PI * 0.5 * drive);
+                }
+                break;
+            case 'glitch':
+                for (let i = 0; i < 44100; i++) {
+                    const x = (i * 2) / 44100 - 1;
+                    if (Math.random() < drive * 0.01) {
+                        curve[i] = (Math.random() - 0.5) * 2;
                     } else {
-                        outputData[i] = inputData[i];
+                        curve[i] = x;
                     }
                 }
-            }
-        };
+                break;
+        }
         
-        source.connect(scriptNode);
-        return scriptNode;
+        shaper.curve = curve;
+        source.connect(shaper);
+        return shaper;
     }
 
     addNoise(source, context, intensity) {
-        const bufferSize = context.sampleRate * 2;
+        const bufferSize = 2048;
         const noiseNode = context.createScriptProcessor(bufferSize, 1, 1);
         
         noiseNode.onaudioprocess = (audioProcessingEvent) => {
@@ -184,7 +162,7 @@ class DistortionEngine {
                 const outputData = outputBuffer.getChannelData(channel);
                 
                 for (let i = 0; i < inputBuffer.length; i++) {
-                    const noise = (Math.random() - 0.5) * 2 * (intensity * 0.1);
+                    const noise = (Math.random() - 0.5) * 2 * (intensity * 0.05);
                     outputData[i] = inputData[i] + noise;
                 }
             }
@@ -195,7 +173,7 @@ class DistortionEngine {
     }
 
     addCrackle(source, context, intensity) {
-        const bufferSize = context.sampleRate * 2;
+        const bufferSize = 2048;
         const crackleNode = context.createScriptProcessor(bufferSize, 1, 1);
         
         crackleNode.onaudioprocess = (audioProcessingEvent) => {
@@ -208,7 +186,7 @@ class DistortionEngine {
                 
                 for (let i = 0; i < inputBuffer.length; i++) {
                     let sample = inputData[i];
-                    if (Math.random() < intensity * 0.005) {
+                    if (Math.random() < intensity * 0.002) {
                         sample = (Math.random() - 0.5) * 2;
                     }
                     outputData[i] = sample;
@@ -226,7 +204,7 @@ class DistortionEngine {
             reader.onload = (e) => {
                 this.audioContext.decodeAudioData(e.target.result)
                     .then(resolve)
-                    .catch(err => reject(new Error('音频解码失败: ' + err.message)));
+                    .catch(err => reject(new Error('音频格式不支持')));
             };
             reader.onerror = () => reject(new Error('文件读取失败'));
             reader.readAsArrayBuffer(file);
@@ -271,7 +249,7 @@ class DistortionEngine {
     }
 }
 
-// 用户界面
+// 用户界面（含进度条）
 class DistortionUI {
     constructor() {
         this.selectedFile = null;
@@ -297,11 +275,33 @@ class DistortionUI {
             duration: document.getElementById('duration'),
             fileSize: document.getElementById('fileSize'),
             newFileSize: document.getElementById('newFileSize'),
+            progressContainer: this.createProgressContainer(),
             distortionType: document.getElementById('distortionType'),
             intensitySlider: document.getElementById('intensitySlider'),
             noiseCheck: document.getElementById('noiseCheck'),
             crackleCheck: document.getElementById('crackleCheck')
         };
+    }
+
+    createProgressContainer() {
+        // 动态创建进度条容器
+        const container = document.createElement('div');
+        container.id = 'progressContainer';
+        container.className = 'hidden mt-6';
+        container.innerHTML = `
+            <div class="text-center mb-4">
+                <h3 class="text-white font-semibold mb-2">正在损坏音频...</h3>
+                <div class="text-white/60 text-sm" id="progressText">0%</div>
+            </div>
+            <div class="relative h-3 bg-white/20 rounded-full overflow-hidden">
+                <div id="progressFill" class="h-full bg-gradient-to-r from-red-500 to-purple-500 rounded-full transition-all duration-300"></div>
+            </div>
+            <div class="text-center mt-2">
+                <div id="progressStep" class="text-xs text-gray-400">准备中...</div>
+            </div>
+        `;
+        document.querySelector('.glass-card').appendChild(container);
+        return container;
     }
 
     bindEvents() {
@@ -319,20 +319,23 @@ class DistortionUI {
 
         this.elements.audioInput.addEventListener('change', (e) => this.handleFile(e.target.files[0]));
         
+        this.elements.uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            this.elements.uploadArea.classList.add('border-cyan-500/50', 'bg-gray-800/50');
+        });
+        
+        this.elements.uploadArea.addEventListener('dragleave', () => {
+            this.elements.uploadArea.classList.remove('border-cyan-500/50', 'bg-gray-800/50');
+        });
+        
         this.elements.uploadArea.addEventListener('drop', (e) => {
             initAudio();
             e.preventDefault();
+            this.elements.uploadArea.classList.remove('border-cyan-500/50', 'bg-gray-800/50');
             this.handleFile(e.dataTransfer.files[0]);
         });
 
-        document.getElementById('processBtn').addEventListener('click', () => {
-            initAudio();
-            this.processAudio();
-        });
-
-        document.getElementById('downloadBtn').addEventListener('click', () => this.download());
-
-        // 实时设置更新
+        // 设置更新
         this.elements.distortionType.addEventListener('change', (e) => {
             this.settings.type = e.target.value;
         });
@@ -345,11 +348,17 @@ class DistortionUI {
         this.elements.crackleCheck.addEventListener('change', (e) => {
             this.settings.crackle = e.target.checked;
         });
+
+        document.getElementById('processBtn').addEventListener('click', () => {
+            initAudio();
+            this.processAudio();
+        });
+        document.getElementById('downloadBtn').addEventListener('click', () => this.download());
     }
 
     handleFile(file) {
         if (!file || !file.type.startsWith('audio/')) {
-            alert('请选择有效的音频文件！');
+            alert('请选择有效的音频文件！支持 MP3, WAV, FLAC, M4A, OGG');
             return;
         }
 
@@ -366,41 +375,67 @@ class DistortionUI {
         this.showElement(this.elements.audioInfo);
         this.showElement(this.elements.controls);
         this.hideElement(this.elements.result);
+        this.hideElement(this.elements.progressContainer);
     }
 
     async processAudio() {
-        if (!this.selectedFile) {
+        if (!this.selectedFile || !this.distortion.audioContext) {
             alert('请先选择音频文件！');
             return;
         }
 
-        document.getElementById('processBtn').innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>损坏中...';
-        document.getElementById('processBtn').disabled = true;
+        // 显示进度条
+        this.hideElement(this.elements.controls);
+        this.showElement(this.elements.progressContainer);
+        this.hideElement(this.elements.result);
+
+        // 禁用按钮
+        const processBtn = document.getElementById('processBtn');
+        processBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>损坏中...';
+        processBtn.disabled = true;
+
+        // 更新进度步骤
+        const steps = [
+            '正在读取文件...',
+            '正在创建音频上下文...',
+            '正在应用主失真...',
+            '正在添加底噪...',
+            '正在添加爆裂音...',
+            '正在最终调整...',
+            '正在导出文件...'
+        ];
 
         try {
             const distortedBlob = await this.distortion.addDistortion(
                 this.selectedFile,
                 this.settings,
                 (progress) => {
-                    // 可以添加进度动画
+                    const stepIndex = Math.floor((progress / 100) * steps.length);
+                    document.getElementById('progressText').textContent = `${Math.round(progress)}%`;
+                    document.getElementById('progressStep').textContent = steps[Math.min(stepIndex, steps.length - 1)];
+                    document.getElementById('progressFill').style.width = `${progress}%`;
                 }
             );
 
             this.distortedBlob = distortedBlob;
             this.elements.newFileSize.textContent = this.formatFileSize(distortedBlob.size);
             
+            this.hideElement(this.elements.progressContainer);
             this.showElement(this.elements.result);
-            document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt mr-2"></i>已损坏';
-            setTimeout(() => {
-                document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt mr-2"></i>再次损坏';
-                document.getElementById('processBtn').disabled = false;
-            }, 2000);
+
+            // 恢复按钮
+            processBtn.innerHTML = '<i class="fas fa-bolt mr-2"></i>再次损坏';
+            processBtn.disabled = false;
 
         } catch (error) {
             console.error('处理失败:', error);
             alert('损坏失败: ' + error.message);
-            document.getElementById('processBtn').innerHTML = '<i class="fas fa-bolt mr-2"></i>重新损坏';
-            document.getElementById('processBtn').disabled = false;
+            
+            this.hideElement(this.elements.progressContainer);
+            this.showElement(this.elements.controls);
+            
+            processBtn.innerHTML = '<i class="fas fa-bolt mr-2"></i>重新损坏';
+            processBtn.disabled = false;
         }
     }
 
@@ -438,7 +473,7 @@ class DistortionUI {
     }
 }
 
-// 初始化
+// 启动应用
 document.addEventListener('DOMContentLoaded', () => {
     new DistortionUI();
 });
