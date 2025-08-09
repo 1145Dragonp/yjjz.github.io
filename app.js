@@ -1,32 +1,43 @@
 class AudioCompressor {
     constructor() {
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // 延迟创建audioContext直到用户交互
+        this.audioContext = null;
     }
 
     async compressAudio(file, qualityLevel, onProgress) {
         try {
+            // 确保在用户交互后创建audioContext
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
             const audioBuffer = await this.fileToAudioBuffer(file);
             const settings = this.getQualitySettings(qualityLevel);
 
-            // 保持原始采样率确保可听性
+            // 创建离线音频上下文 - 使用合理的采样率
+            const sampleRate = Math.max(8000, Math.min(44100, audioBuffer.sampleRate));
             const offlineContext = new OfflineAudioContext(
                 audioBuffer.numberOfChannels,
                 audioBuffer.length,
-                audioBuffer.sampleRate
+                sampleRate
             );
 
             // 音频处理链
             const source = offlineContext.createBufferSource();
             source.buffer = audioBuffer;
 
-            // 压缩器
+            // 动态压缩器
             const compressor = offlineContext.createDynamicsCompressor();
             compressor.threshold.setValueAtTime(-20, offlineContext.currentTime);
             compressor.ratio.setValueAtTime(settings.compressionRatio, offlineContext.currentTime);
             compressor.attack.setValueAtTime(0.003, offlineContext.currentTime);
             compressor.release.setValueAtTime(0.1, offlineContext.currentTime);
 
-            // 失真效果
+            // 添加增益控制防止削波
+            const gainNode = offlineContext.createGain();
+            gainNode.gain.setValueAtTime(0.8, offlineContext.currentTime);
+
+            // 失真效果（4-5级）
             let lastNode = compressor;
             if (settings.distortion > 0) {
                 const waveShaper = offlineContext.createWaveShaper();
@@ -35,35 +46,39 @@ class AudioCompressor {
                 lastNode = waveShaper;
             }
 
+            // 连接链路
+            source.connect(gainNode);
+            gainNode.connect(compressor);
             lastNode.connect(offlineContext.destination);
             source.start();
 
-            // 进度模拟
+            // 进度动画
             let progress = 0;
             const progressInterval = setInterval(() => {
-                progress = Math.min(progress + 5, 95);
+                progress = Math.min(progress + 2, 95);
                 onProgress(progress);
-            }, 100);
+            }, 50);
 
             const renderedBuffer = await offlineContext.startRendering();
             clearInterval(progressInterval);
             onProgress(100);
 
-            // 真正的3比特压缩
+            // 3比特量化
             return this.create3BitAudio(renderedBuffer);
 
         } catch (error) {
+            console.error('压缩错误:', error);
             throw new Error(`处理失败: ${error.message}`);
         }
     }
 
     getQualitySettings(level) {
         return {
-            1: { compressionRatio: 2, distortion: 0 },   // 3比特轻度
-            2: { compressionRatio: 3, distortion: 0 },   // 3比特中度
-            3: { compressionRatio: 4, distortion: 0 },   // 3比特重度
-            4: { compressionRatio: 4, distortion: 20 },  // 3比特+失真
-            5: { compressionRatio: 4, distortion: 40 }   // 3比特+强失真
+            1: { compressionRatio: 2, distortion: 0 },
+            2: { compressionRatio: 3, distortion: 0 },
+            3: { compressionRatio: 4, distortion: 0 },
+            4: { compressionRatio: 4, distortion: 20 },
+            5: { compressionRatio: 4, distortion: 40 }
         }[level];
     }
 
@@ -72,7 +87,7 @@ class AudioCompressor {
         const curve = new Float32Array(samples);
         for (let i = 0; i < samples; i++) {
             const x = (i * 2) / samples - 1;
-            curve[i] = Math.tanh(x * (amount/10));
+            curve[i] = Math.tanh(x * amount / 20);
         }
         return curve;
     }
@@ -80,13 +95,11 @@ class AudioCompressor {
     async fileToAudioBuffer(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const audioBuffer = await this.audioContext.decodeAudioData(e.target.result);
-                    resolve(audioBuffer);
-                } catch (error) {
-                    reject(error);
-                }
+            reader.onload = (e) => {
+                // 使用try-catch处理解码错误
+                this.audioContext.decodeAudioData(e.target.result)
+                    .then(resolve)
+                    .catch(err => reject(new Error('音频解码失败: ' + err.message)));
             };
             reader.onerror = () => reject(new Error('文件读取失败'));
             reader.readAsArrayBuffer(file);
@@ -94,8 +107,8 @@ class AudioCompressor {
     }
 
     create3BitAudio(buffer) {
-        // 真正的3比特量化
-        const levels = [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75]; // 8个电平
+        // 3比特量化（8个电平）
+        const levels = [-1, -0.714, -0.428, -0.142, 0.142, 0.428, 0.714, 1];
         
         const compressedBuffer = this.audioContext.createBuffer(
             buffer.numberOfChannels,
@@ -103,16 +116,16 @@ class AudioCompressor {
             buffer.sampleRate
         );
 
-        // 量化到3比特（8个电平）
+        // 量化到8个电平
         for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
             const sourceData = buffer.getChannelData(channel);
             const targetData = compressedBuffer.getChannelData(channel);
             
             for (let i = 0; i < buffer.length; i++) {
-                // 映射到最接近的3比特电平
                 const sample = sourceData[i];
-                const index = Math.round((sample + 1) * 3.5);
-                const clampedIndex = Math.max(0, Math.min(7, index));
+                // 映射到8个电平
+                const levelIndex = Math.round(((sample + 1) / 2) * 7);
+                const clampedIndex = Math.max(0, Math.min(7, levelIndex));
                 targetData[i] = levels[clampedIndex];
             }
         }
@@ -158,7 +171,7 @@ class AudioCompressor {
     }
 }
 
-// 用户界面控制
+// 修复后的UI控制
 class AudioUI {
     constructor() {
         this.selectedFile = null;
@@ -189,26 +202,23 @@ class AudioUI {
     }
 
     bindEvents() {
-        this.elements.uploadArea.addEventListener('click', () => this.elements.audioInput.click());
+        // 用户交互后创建AudioContext
+        const initAudio = () => {
+            if (!this.compressor.audioContext) {
+                this.compressor.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        };
+
+        this.elements.uploadArea.addEventListener('click', () => {
+            initAudio();
+            this.elements.audioInput.click();
+        });
+
         this.elements.audioInput.addEventListener('change', (e) => this.handleFile(e.target.files[0]));
         
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            this.elements.uploadArea.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-            });
-        });
-        
-        this.elements.uploadArea.addEventListener('dragenter', () => {
-            this.elements.uploadArea.classList.add('border-white/50', 'bg-white/5');
-        });
-        
-        this.elements.uploadArea.addEventListener('dragleave', () => {
-            this.elements.uploadArea.classList.remove('border-white/50', 'bg-white/5');
-        });
-        
         this.elements.uploadArea.addEventListener('drop', (e) => {
-            this.elements.uploadArea.classList.remove('border-white/50', 'bg-white/5');
+            initAudio();
+            e.preventDefault();
             this.handleFile(e.dataTransfer.files[0]);
         });
 
@@ -216,7 +226,10 @@ class AudioUI {
         document.getElementById('closeModal').addEventListener('click', () => this.hideModal());
         document.getElementById('applySettings').addEventListener('click', () => this.applySettings());
         this.elements.qualitySlider.addEventListener('input', () => this.updateQualityDescription());
-        document.getElementById('compressBtn').addEventListener('click', () => this.compress());
+        document.getElementById('compressBtn').addEventListener('click', () => {
+            initAudio();
+            this.compress();
+        });
         document.getElementById('downloadBtn').addEventListener('click', () => this.download());
 
         this.updateQualityDescription();
@@ -229,7 +242,7 @@ class AudioUI {
         }
 
         this.selectedFile = file;
-        this.elements.fileName.textContent = file.name;
+        this.elements.fileName.textContent = file.name.length > 20 ? file.name.substring(0, 20) + '...' : file.name;
         this.elements.fileSize.textContent = this.formatFileSize(file.size);
         
         const audio = new Audio(URL.createObjectURL(file));
@@ -240,8 +253,6 @@ class AudioUI {
 
         this.showElement(this.elements.audioInfo);
         this.showElement(this.elements.controls);
-        this.hideElement(this.elements.progressContainer);
-        this.hideElement(this.elements.result);
     }
 
     showModal() {
@@ -262,9 +273,9 @@ class AudioUI {
     updateQualityDescription() {
         const level = this.elements.qualitySlider.value;
         const descriptions = {
-            1: '1级：3比特轻度压缩，清晰可听',
-            2: '2级：3比特中度压缩，可听',
-            3: '3级：3比特重度压缩，仍可听',
+            1: '1级：3比特8电平，轻度量化噪声',
+            2: '2级：3比特8电平，中度量化噪声',
+            3: '3级：3比特8电平，重度量化噪声',
             4: '3比特+轻度失真，Lo-Fi效果',
             5: '3比特+强失真，复古效果'
         };
@@ -272,7 +283,7 @@ class AudioUI {
     }
 
     async compress() {
-        if (!this.selectedFile) {
+        if (!this.selectedFile || !this.compressor.audioContext) {
             alert('请先选择音频文件！');
             return;
         }
@@ -300,7 +311,7 @@ class AudioUI {
 
         } catch (error) {
             console.error('压缩失败:', error);
-            alert('处理失败，请重试！');
+            alert('处理失败: ' + error.message + '\n请尝试重新上传文件');
             this.showElement(this.elements.controls);
             this.hideElement(this.elements.progressContainer);
         }
@@ -340,7 +351,7 @@ class AudioUI {
     }
 }
 
-// 初始化
+// 初始化应用
 document.addEventListener('DOMContentLoaded', () => {
     new AudioUI();
 });
