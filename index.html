@@ -3,129 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3比特音频压缩器 Pro</title>
+    <title>全损音质生成器</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .gradient-bg {
-            background: linear-gradient(-45deg, #667eea, #764ba2, #f093fb, #f5576c);
-            background-size: 400% 400%;
-            animation: gradient 15s ease infinite;
+        .cyber-bg {
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
         }
-        @keyframes gradient {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
+        .neon-glow {
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
         }
-        .glass-card {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        .glitch {
+            animation: glitch 2s infinite;
+        }
+        @keyframes glitch {
+            0%, 100% { transform: translate(0); }
+            20% { transform: translate(-2px, 2px); }
+            40% { transform: translate(-2px, -2px); }
+            60% { transform: translate(2px, 2px); }
+            80% { transform: translate(2px, -2px); }
         }
     </style>
 </head>
-<body class="gradient-bg min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-md mx-auto">
+<body class="cyber-bg min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md">
         <!-- 主卡片 -->
-        <div class="glass-card rounded-3xl shadow-2xl p-8">
-            <!-- 标题区域 -->
+        <div class="bg-gray-900/80 backdrop-blur-xl rounded-3xl p-8 border border-cyan-500/30 neon-glow">
+            
+            <!-- 标题 -->
             <div class="text-center mb-8">
-                <div class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-waveform-lines text-3xl text-white"></i>
+                <div class="w-20 h-20 bg-gradient-to-r from-red-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-bolt text-3xl text-white glitch"></i>
                 </div>
-                <h1 class="text-3xl font-bold text-white mb-2">3比特音频压缩器</h1>
-                <p class="text-white/80 text-sm">真正的3比特深度压缩 • 始终可听</p>
+                <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-purple-400 mb-2">
+                    全损音质生成器
+                </h1>
+                <p class="text-gray-400 text-sm">纯失真 • 零压缩 • 完美损坏</p>
             </div>
 
             <!-- 上传区域 -->
-            <div id="uploadArea" class="border-2 border-dashed border-white/30 rounded-2xl p-8 text-center cursor-pointer 
-                                        hover:border-white/50 hover:bg-white/5 transition-all group">
+            <div id="uploadArea" class="border-2 border-dashed border-gray-600 rounded-2xl p-8 text-center cursor-pointer 
+                                        hover:border-cyan-500/50 hover:bg-gray-800/50 transition-all group">
                 <input type="file" id="audioInput" accept="audio/*" class="hidden">
-                <i class="fas fa-cloud-upload-alt text-5xl text-white/60 mb-4 group-hover:scale-110 transition-transform"></i>
-                <p class="text-white/90 font-semibold mb-2">拖拽或点击上传</p>
-                <p class="text-white/60 text-xs">支持所有音频格式</p>
+                <i class="fas fa-upload text-5xl text-gray-500 mb-4 group-hover:text-cyan-400 transition-colors"></i>
+                <p class="text-gray-300 font-semibold mb-1">上传音频文件</p>
+                <p class="text-gray-500 text-xs">MP3 WAV FLAC M4A OGG</p>
             </div>
 
             <!-- 音频信息 -->
             <div id="audioInfo" class="hidden mt-6">
-                <div class="bg-white/10 rounded-xl p-4">
+                <div class="bg-gray-800/50 rounded-xl p-4">
                     <div class="flex items-center mb-3">
-                        <i class="fas fa-file-audio text-blue-300 mr-3"></i>
+                        <i class="fas fa-file-audio text-cyan-400 mr-3"></i>
                         <span id="fileName" class="text-white font-medium truncate"></span>
                     </div>
-                    <div class="grid grid-cols-2 gap-4 text-sm">
-                        <div class="text-white/70">
-                            <i class="fas fa-clock mr-1"></i>
-                            <span id="duration" class="text-white/90"></span>
-                        </div>
-                        <div class="text-white/70">
-                            <i class="fas fa-database mr-1"></i>
-                            <span id="fileSize" class="text-white/90"></span>
-                        </div>
+                    <div class="grid grid-cols-2 gap-4 text-sm text-gray-400">
+                        <div><i class="fas fa-clock mr-1"></i><span id="duration"></span></div>
+                        <div><i class="fas fa-database mr-1"></i><span id="fileSize"></span></div>
                     </div>
                 </div>
             </div>
 
-            <!-- 控制按钮 -->
-            <div id="controls" class="hidden mt-6 space-y-3">
-                <button id="settingsBtn" class="w-full bg-white/20 hover:bg-white/30 text-white font-semibold py-3 rounded-xl transition-all">
-                    <i class="fas fa-cog mr-2"></i>高级设置
-                </button>
-                <button id="compressBtn" class="w-full bg-gradient-to-r from-pink-500 to-purple-500 text-white font-bold py-3 rounded-xl">
-                    <i class="fas fa-magic mr-2"></i>开始压缩
-                </button>
-            </div>
+            <!-- 失真控制器 -->
+            <div id="controls" class="hidden mt-6 space-y-6">
+                
+                <!-- 失真类型选择 -->
+                <div>
+                    <label class="text-cyan-400 font-medium mb-2 block">失真类型</label>
+                    <select id="distortionType" class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white">
+                        <option value="digital">数字失真</option>
+                        <option value="analog">模拟管失真</option>
+                        <option value="crushed">比特粉碎</option>
+                        <option value="radio">收音机失真</option>
+                        <option value="glitch">故障艺术</option>
+                    </select>
+                </div>
 
-            <!-- 进度条 -->
-            <div id="progressContainer" class="hidden mt-6">
-                <div class="text-center mb-4">
-                    <h3 class="text-white font-semibold mb-2">正在压缩...</h3>
-                    <div class="text-white/60 text-sm" id="progressText">0%</div>
+                <!-- 强度滑块 -->
+                <div>
+                    <label class="text-cyan-400 font-medium mb-2 block">失真强度</label>
+                    <input type="range" id="intensitySlider" min="1" max="10" value="5" 
+                           class="w-full h-2 bg-gray-700 rounded-lg appearance-none">
+                    <div class="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>轻</span><span>中</span><span>重</span><span>全损</span>
+                    </div>
                 </div>
-                <div class="h-3 bg-white/20 rounded-full">
-                    <div id="progressFill" class="h-full bg-gradient-to-r from-green-400 to-blue-500 rounded-full transition-all"></div>
+
+                <!-- 额外效果 -->
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="noiseCheck" class="mr-2">
+                        <span class="text-gray-300 text-sm">底噪</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" id="crackleCheck" class="mr-2">
+                        <span class="text-gray-300 text-sm">爆裂音</span>
+                    </label>
                 </div>
+
+                <!-- 预览按钮 -->
+                <button id="processBtn" class="w-full bg-gradient-to-r from-red-500 to-purple-600 text-white font-bold py-3 rounded-xl 
+                                              hover:from-red-600 hover:to-purple-700 transition-all">
+                    <i class="fas fa-bolt mr-2"></i>生成全损音质
+                </button>
             </div>
 
             <!-- 结果 -->
-            <div id="result" class="hidden mt-6 text-center">
-                <div class="bg-white/10 rounded-xl p-6">
-                    <i class="fas fa-check-circle text-green-300 text-4xl mb-3"></i>
-                    <h3 class="text-white font-bold text-xl mb-2">压缩完成！</h3>
-                    <p class="text-white/70 mb-1">新文件: <span id="newFileSize" class="text-green-300 font-bold"></span></p>
-                    <button id="downloadBtn" class="mt-4 w-full bg-gradient-to-r from-green-400 to-blue-500 text-white font-bold py-3 rounded-xl">
-                        <i class="fas fa-download mr-2"></i>下载音频
+            <div id="result" class="hidden mt-6">
+                <div class="bg-gradient-to-r from-green-500/20 to-blue-500/20 rounded-xl p-6 text-center">
+                    <i class="fas fa-check-circle text-green-400 text-3xl mb-3"></i>
+                    <h3 class="text-white font-bold mb-2">全损完成！</h3>
+                    <p class="text-gray-400 mb-3">文件已损坏到完美状态</p>
+                    <button id="downloadBtn" class="w-full bg-gradient-to-r from-green-500 to-blue-500 text-white font-bold py-3 rounded-xl">
+                        <i class="fas fa-download mr-2"></i>下载损坏版
                     </button>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 设置模态框 -->
-    <div id="settingsModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div class="glass-card rounded-2xl p-6 w-full max-w-sm">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-white font-bold text-xl">压缩设置</h2>
-                <button id="closeModal" class="text-white/60 hover:text-white"><i class="fas fa-times"></i></button>
-            </div>
-            
-            <div class="space-y-6">
-                <div>
-                    <label class="text-white/90 font-medium mb-2 block">压缩等级</label>
-                    <input type="range" id="qualitySlider" min="1" max="5" value="3" 
-                           class="w-full h-2 bg-white/20 rounded-lg">
-                    <div class="flex justify-between text-xs text-white/60 mt-1">
-                        <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
-                    </div>
-                </div>
-
-                <div id="qualityDescription" class="bg-white/10 rounded-lg p-3 text-white/80 text-sm">
-                    3级：3比特重度压缩，仍可听
-                </div>
-
-                <button id="applySettings" class="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white font-bold py-3 rounded-lg">
-                    应用
-                </button>
             </div>
         </div>
     </div>
