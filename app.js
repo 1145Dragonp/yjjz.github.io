@@ -1,223 +1,153 @@
-class DistortionEngine {
-    constructor() {
-        this.audioContext = null;
-    }
-
-    async addDistortion(file, settings, onProgress) {
-        try {
-            if (!this.audioContext) {
-                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-
-            onProgress(0);
-            const audioBuffer = await this.fileToAudioBuffer(file);
-            onProgress(20);
-
-            const processedBuffer = await this.processAudioBuffer(audioBuffer, settings, onProgress);
-            onProgress(100);
-            return this.bufferToWav(processedBuffer);
-
-        } catch (error) {
-            throw new Error(`处理失败: ${error.message}`);
-        }
-    }
-
-    async processAudioBuffer(buffer, settings, onProgress) {
-        const processedBuffer = this.audioContext.createBuffer(
-            buffer.numberOfChannels,
-            buffer.length,
-            buffer.sampleRate
-        );
-
-        // 分步处理
-        const totalSteps = 5;
-        for (let step = 0; step < totalSteps; step++) {
-            const start = Math.floor((step / totalSteps) * buffer.length);
-            const end = Math.floor(((step + 1) / totalSteps) * buffer.length);
-
-            for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-                const inputData = buffer.getChannelData(channel);
-                const outputData = processedBuffer.getChannelData(channel);
-
-                for (let i = start; i < end; i++) {
-                    let sample = inputData[i];
-                    
-                    // 主失真
-                    sample = this.applyDistortion(sample, settings);
-                    
-                    // 额外效果
-                    if (settings.noise) sample += (Math.random() - 0.5) * 0.1 * settings.intensity;
-                    if (settings.crackle && Math.random() < 0.001 * settings.intensity) {
-                        sample = (Math.random() - 0.5) * 2;
-                    }
-                    
-                    outputData[i] = Math.max(-1, Math.min(1, sample));
-                }
-            }
-            
-            onProgress(20 + (step / totalSteps) * 80);
-        }
-
-        return processedBuffer;
-    }
-
-    applyDistortion(sample, settings) {
-        const intensity = settings.intensity * 0.3;
-        switch (settings.type) {
-            case 'digital': return Math.tanh(sample * intensity);
-            case 'analog': return Math.sin(sample * intensity * Math.PI * 0.5);
-            case 'crushed': 
-                const levels = Math.pow(2, Math.max(2, 16 - intensity));
-                return Math.round(sample * levels) / levels;
-            case 'radio': return Math.sin(sample * intensity * 2) * 0.7;
-            case 'glitch': 
-                return Math.random() < 0.02 * intensity ? (Math.random() - 0.5) * 2 : sample;
-            default: return sample;
-        }
-    }
-
-    async fileToAudioBuffer(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                this.audioContext.decodeAudioData(e.target.result)
-                    .then(resolve)
-                    .catch(() => reject(new Error('不支持的音频格式')));
-            };
-            reader.onerror = () => reject(new Error('文件读取失败'));
-            reader.readAsArrayBuffer(file);
-        });
-    }
-
-    bufferToWav(buffer) {
-        const length = buffer.length * buffer.numberOfChannels * 2;
-        const arrayBuffer = new ArrayBuffer(44 + length);
-        const view = new DataView(arrayBuffer);
-
-        const writeString = (offset, string) => {
-            for (let i = 0; i < string.length; i++) {
-                view.setUint8(offset + i, string.charCodeAt(i));
-            }
-        };
-
-        writeString(0, 'RIFF');
-        view.setUint32(4, 36 + length, true);
-        writeString(8, 'WAVE');
-        writeString(12, 'fmt ');
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true);
-        view.setUint16(22, buffer.numberOfChannels, true);
-        view.setUint32(24, buffer.sampleRate, true);
-        view.setUint32(28, buffer.sampleRate * buffer.numberOfChannels * 2, true);
-        view.setUint16(32, buffer.numberOfChannels * 2, true);
-        view.setUint16(34, 16, true);
-        writeString(36, 'data');
-        view.setUint32(40, length, true);
-
-        let offset = 44;
-        for (let i = 0; i < buffer.length; i++) {
-            for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-                const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
-                view.setInt16(offset, sample * 0x7FFF, true);
-                offset += 2;
-            }
-        }
-        return new Blob([arrayBuffer], { type: 'audio/wav' });
-    }
-}
-
-// 移动友好的UI控制器
 class DistortionUI {
     constructor() {
         this.selectedFile = null;
         this.distortion = new DistortionEngine();
         this.settings = { type: 'digital', intensity: 5, noise: false, crackle: false };
+        this.audioContext = null;
         this.init();
     }
 
     init() {
+        console.log('🚀 初始化应用...');
+        this.setupElements();
         this.bindEvents();
         this.setupProgressBar();
     }
 
-    setupProgressBar() {
-        const container = document.getElementById('progressContainer');
-        container.innerHTML = `
-            <div class="text-center mb-2">
-                <div class="text-white text-sm mb-1" id="progressText">0%</div>
-            </div>
-            <div class="h-2 bg-white/20 rounded-full">
-                <div id="progressFill" class="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full transition-all"></div>
-            </div>
-        `;
+    setupElements() {
+        // 获取所有DOM元素
+        this.elements = {
+            audioInput: document.getElementById('audioInput'),
+            uploadArea: document.getElementById('uploadArea'),
+            audioInfo: document.getElementById('audioInfo'),
+            controls: document.getElementById('controls'),
+            result: document.getElementById('result'),
+            progressContainer: document.getElementById('progressContainer'),
+            fileName: document.getElementById('fileName'),
+            duration: document.getElementById('duration'),
+            fileSize: document.getElementById('fileSize'),
+            newFileSize: document.getElementById('newFileSize'),
+            progressText: document.getElementById('progressText'),
+            progressFill: document.getElementById('progressFill'),
+            processBtn: document.getElementById('processBtn'),
+            downloadBtn: document.getElementById('downloadBtn')
+        };
+
+        console.log('📋 元素已绑定:', Object.keys(this.elements));
     }
 
     bindEvents() {
-        // 音频上下文初始化
-        const initAudio = () => {
-            if (!this.distortion.audioContext) {
-                this.distortion.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-        };
+        console.log('🔗 绑定事件监听器...');
 
-        // 文件输入
-        const audioInput = document.getElementById('audioInput');
-        audioInput.addEventListener('change', (e) => {
-            initAudio();
+        // 1. 文件输入事件（关键修复）
+        this.elements.audioInput.addEventListener('change', (e) => {
+            console.log('📁 文件选择事件触发:', e.target.files[0]?.name);
             this.handleFile(e.target.files[0]);
         });
 
-        // 点击上传区域
-        document.getElementById('uploadArea').addEventListener('click', () => {
-            initAudio();
-            audioInput.click();
+        // 2. 点击上传区域
+        this.elements.uploadArea.addEventListener('click', () => {
+            console.log('👆 点击上传区域');
+            this.initAudioContext();
+            this.elements.audioInput.click();
         });
 
-        // 拖拽支持
-        document.getElementById('uploadArea').addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.currentTarget.classList.add('upload-hover');
+        // 3. 拖拽支持
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            this.elements.uploadArea.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
         });
-        document.getElementById('uploadArea').addEventListener('dragleave', (e) => {
-            e.currentTarget.classList.remove('upload-hover');
+
+        this.elements.uploadArea.addEventListener('dragenter', () => {
+            console.log('🤏 拖拽进入');
+            this.elements.uploadArea.classList.add('border-pink-500/50', 'bg-white/5');
         });
-        document.getElementById('uploadArea').addEventListener('drop', (e) => {
-            e.preventDefault();
-            e.currentTarget.classList.remove('upload-hover');
-            initAudio();
+
+        this.elements.uploadArea.addEventListener('dragleave', () => {
+            this.elements.uploadArea.classList.remove('border-pink-500/50', 'bg-white/5');
+        });
+
+        this.elements.uploadArea.addEventListener('drop', (e) => {
+            console.log('📂 拖拽文件:', e.dataTransfer.files[0]?.name);
+            this.initAudioContext();
+            this.elements.uploadArea.classList.remove('border-pink-500/50', 'bg-white/5');
             this.handleFile(e.dataTransfer.files[0]);
         });
 
-        // 控制事件
+        // 4. 控制事件
         document.getElementById('distortionType').addEventListener('change', (e) => {
             this.settings.type = e.target.value;
+            console.log('🎛️ 失真类型:', this.settings.type);
         });
+
         document.getElementById('intensitySlider').addEventListener('input', (e) => {
             this.settings.intensity = parseInt(e.target.value);
             document.getElementById('intensityValue').textContent = e.target.value;
-        });
-        document.getElementById('noiseCheck').addEventListener('change', (e) => {
-            this.settings.noise = e.target.checked;
-        });
-        document.getElementById('crackleCheck').addEventListener('change', (e) => {
-            this.settings.crackle = e.target.checked;
+            console.log('🎚️ 强度:', this.settings.intensity);
         });
 
-        // 处理按钮
-        document.getElementById('processBtn').addEventListener('click', () => {
-            initAudio();
+        document.getElementById('noiseCheck').addEventListener('change', (e) => {
+            this.settings.noise = e.target.checked;
+            console.log('🔊 底噪:', this.settings.noise);
+        });
+
+        document.getElementById('crackleCheck').addEventListener('change', (e) => {
+            this.settings.crackle = e.target.checked;
+            console.log('💥 爆裂音:', this.settings.crackle);
+        });
+
+        // 5. 处理按钮（确保已绑定）
+        this.elements.processBtn.addEventListener('click', () => {
+            console.log('🎯 点击处理按钮');
+            this.initAudioContext();
             this.processAudio();
         });
-        document.getElementById('downloadBtn').addEventListener('click', () => this.download());
+    }
+
+    initAudioContext() {
+        if (!this.audioContext) {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            console.log('🎵 音频上下文已创建');
+        }
+    }
+
+    setupProgressBar() {
+        const container = document.getElementById('progressContainer');
+        if (!container) {
+            const newContainer = document.createElement('div');
+            newContainer.id = 'progressContainer';
+            newContainer.className = 'hidden mt-4';
+            newContainer.innerHTML = `
+                <div class="text-center mb-2">
+                    <div class="text-white text-sm" id="progressText">0%</div>
+                </div>
+                <div class="h-2 bg-white/20 rounded-full">
+                    <div id="progressFill" class="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full transition-all"></div>
+                </div>
+            `;
+            document.querySelector('.glass-card').appendChild(newContainer);
+        }
     }
 
     handleFile(file) {
-        if (!file || !file.type.startsWith('audio/')) {
-            alert('请上传音频文件（MP3/WAV/FLAC/M4A/OGG）');
+        if (!file) {
+            console.log('❌ 无文件选择');
+            return;
+        }
+
+        console.log('✅ 文件已选择:', file.name, file.type, file.size);
+        
+        // 验证文件类型
+        if (!file.type.startsWith('audio/')) {
+            alert('请上传音频文件！支持: MP3, WAV, FLAC, M4A, OGG');
             return;
         }
 
         this.selectedFile = file;
+        
+        // 显示文件信息
         this.elements.fileName.textContent = file.name.length > 15 ? file.name.substring(0, 15) + '...' : file.name;
         this.elements.fileSize.textContent = this.formatFileSize(file.size);
         
@@ -229,20 +159,26 @@ class DistortionUI {
         });
 
         // 显示控制面板
-        document.getElementById('audioInfo').classList.remove('hidden');
-        document.getElementById('controls').classList.remove('hidden');
-        document.getElementById('progressContainer').classList.add('hidden');
-        document.getElementById('result').classList.add('hidden');
+        console.log('🎯 显示控制面板');
+        this.elements.audioInfo.style.display = 'block';
+        this.elements.controls.style.display = 'block';
+        this.elements.result.style.display = 'none';
+        this.elements.progressContainer.style.display = 'none';
     }
 
     async processAudio() {
-        if (!this.selectedFile) return;
+        if (!this.selectedFile) {
+            alert('请先选择音频文件！');
+            return;
+        }
 
-        // 显示进度
-        document.getElementById('controls').classList.add('hidden');
-        document.getElementById('progressContainer').classList.remove('hidden');
+        console.log('🚀 开始处理...');
         
-        const btn = document.getElementById('processBtn');
+        // 显示进度
+        this.elements.controls.style.display = 'none';
+        this.elements.progressContainer.style.display = 'block';
+        
+        const btn = this.elements.processBtn;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>损坏中...';
         btn.disabled = true;
 
@@ -251,23 +187,25 @@ class DistortionUI {
                 this.selectedFile,
                 this.settings,
                 (progress) => {
-                    document.getElementById('progressText').textContent = `${Math.round(progress)}%`;
-                    document.getElementById('progressFill').style.width = `${progress}%`;
+                    this.elements.progressText.textContent = `${Math.round(progress)}%`;
+                    this.elements.progressFill.style.width = `${progress}%`;
                 }
             );
 
-            document.getElementById('newFileSize').textContent = this.formatFileSize(result.size);
-            document.getElementById('result').classList.remove('hidden');
-            document.getElementById('progressContainer').classList.add('hidden');
-            
             this.distortedBlob = result;
+            this.elements.newFileSize.textContent = this.formatFileSize(result.size);
+            
+            this.elements.result.style.display = 'block';
+            this.elements.progressContainer.style.display = 'none';
+            
             btn.innerHTML = '<i class="fas fa-bolt mr-1"></i>再次损坏';
             btn.disabled = false;
 
         } catch (error) {
+            console.error('❌ 处理失败:', error);
             alert('处理失败: ' + error.message);
-            document.getElementById('controls').classList.remove('hidden');
-            document.getElementById('progressContainer').classList.add('hidden');
+            this.elements.controls.style.display = 'block';
+            this.elements.progressContainer.style.display = 'none';
             btn.innerHTML = '<i class="fas fa-bolt mr-1"></i>重新损坏';
             btn.disabled = false;
         }
@@ -299,12 +237,8 @@ class DistortionUI {
     }
 }
 
-// 启动
+// 确保DOM加载完成
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('🎉 应用已初始化');
     new DistortionUI();
-    
-    // 修复iOS点击延迟
-    if ('ontouchstart' in window) {
-        document.body.addEventListener('touchstart', () => {}, {passive: true});
-    }
 });
